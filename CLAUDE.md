@@ -12,7 +12,7 @@ The same content applies to other agents (`AGENTS.md`, `GEMINI.md`). Copy this f
 
 The project is targeted at three machine audiences: MCP clients consuming generated schemas, coding agents reasoning about whether modifications are safe, and CI pipelines enforcing contracts at merge time. Human developers are a secondary audience.
 
-**Current status: Phase 1 complete.** The specification and foundational ADRs are accepted. `parser/source.py` (AST-based `FunctionInfo` extraction) and `parser/docstring.py` (`GoogleParser`) are implemented and fully tested (85 tests, all passing). Phase 2 (tier assignment + rule registry) is next.
+**Current implementation status: see `docs/PROGRESS.md`.** CLAUDE.md does not track progress — it is a stable agent contract.
 
 **The project owner is Ray.** Address him directly when asking questions. Ray's working preferences are documented below under "Working with Ray."
 
@@ -20,13 +20,14 @@ The project is targeted at three machine audiences: MCP clients consuming genera
 
 ## Read first, in this order
 
-1. **`docs/spec/docpact-spec.md`** — the specification. Source of truth for what docpact is. Read it fully before writing any code. ~1200 lines.
-2. **`docs/adr/README.md`** — ADR index and process.
-3. **`docs/adr/ADR-001-implementation-language.md`** — why Python + griffe, and what alternatives were rejected. Critical for understanding constraints.
-4. **`docs/adr/ADR-002-docstring-format-baseline.md`** — why only Google style in v0.1.
-5. **`docs/adr/ADR-003-tier-assignment.md`** — why tier is derived from context, not declared per-function.
-6. **`PROJECT_STRUCTURE.md`** — directory layout and design rules for the codebase.
-7. **`pyproject.toml`** — dependencies, tooling configuration, scope of dev environment.
+1. **`docs/PROGRESS.md`** — current implementation status and phase log. Read this before anything else so you know what is done and what is next.
+2. **`docs/spec/docpact-spec.md`** — the specification. Source of truth for what docpact is. Read it fully before writing any code. ~1200 lines.
+3. **`docs/adr/README.md`** — ADR index and process.
+4. **`docs/adr/ADR-001-implementation-language.md`** — why Python + griffe, and what alternatives were rejected. Critical for understanding constraints.
+5. **`docs/adr/ADR-002-docstring-format-baseline.md`** — why only Google style in v0.1.
+6. **`docs/adr/ADR-003-tier-assignment.md`** — why tier is derived from context, not declared per-function.
+7. **`PROJECT_STRUCTURE.md`** — directory layout and design rules for the codebase.
+8. **`pyproject.toml`** — dependencies, tooling configuration, scope of dev environment.
 
 After reading, examine the existing skeleton under `src/docpact/`. Every module has a docstring explaining its purpose. Functions have stubs that raise `NotImplementedError` — those are your implementation targets.
 
