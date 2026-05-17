@@ -106,7 +106,6 @@ omit = [
     "src/docpact/__main__.py",
     "src/docpact/rules/mcp/mcp001_decorator_docstring_conflict.py",
     "src/docpact/testing.py",
-    "src/docpact/fix.py",
 ]
 
 [tool.coverage.report]

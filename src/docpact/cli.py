@@ -22,10 +22,11 @@ import docpact.rules.doc.doc001_missing_docstring
 import docpact.rules.doc.doc007_param_mismatch  # noqa: F401
 from docpact.config import Config, file_ignores_for, file_is_excluded, load_config, rule_is_enabled
 from docpact.fix import apply_fixes, diff_fixes
-from docpact.output import format_summary, format_text
+from docpact.output import format_json, format_summary, format_text
 from docpact.parser.docstring import GoogleParser
 from docpact.parser.source import extract_functions
 from docpact.rules._registry import RuleConfig, all_rules
+from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
 
 if TYPE_CHECKING:
@@ -46,12 +47,18 @@ def _collect_py_files(paths: tuple[str, ...], config: Config) -> list[Path]:
     return result
 
 
-def _run_checks(py_files: list[Path], config: Config) -> list[RuleResult]:
+def _run_checks(
+    py_files: list[Path],
+    config: Config,
+) -> tuple[list[RuleResult], dict[Path, dict[int, frozenset[str]]]]:
     parser = GoogleParser()
     rules = all_rules()
     results: list[RuleResult] = []
+    suppressions: dict[Path, dict[int, frozenset[str]]] = {}
 
     for file_path in py_files:
+        source_text = file_path.read_text(errors="replace")
+        suppressions[file_path] = parse_suppressions(source_text)
         extra_ignores = file_ignores_for(file_path, config.per_file_ignores)
         functions = extract_functions(file_path)
         for func in functions:
@@ -70,7 +77,7 @@ def _run_checks(py_files: list[Path], config: Config) -> list[RuleResult]:
                 results.extend(rule_fn(func, doc, cfg))
 
     results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
-    return results
+    return results, suppressions
 
 
 @click.group()
@@ -149,7 +156,7 @@ def check(
         )
 
     py_files = _collect_py_files(paths, config)
-    results = _run_checks(py_files, config)
+    results, suppressions = _run_checks(py_files, config)
 
     apply_unsafe = unsafe_fixes and do_fix
 
@@ -165,18 +172,23 @@ def check(
             click.echo(f"warning: {conflict}", err=True)
         # Re-run checks on modified files so reported results reflect post-fix state.
         if modified:
-            results = _run_checks(py_files, config)
+            results, suppressions = _run_checks(py_files, config)
+
+    # Apply inline suppressions before output and exit-code evaluation.
+    visible = apply_suppressions(results, suppressions)
 
     cwd = Path.cwd()
     if output_format == "text":
-        text = format_text(results, cwd=cwd)
+        text = format_text(visible, cwd=cwd)
         if text:
             click.echo(text)
-        summary = format_summary(results)
+        summary = format_summary(visible)
         if summary:
             click.echo(summary)
+    elif output_format == "json":
+        click.echo(format_json(visible, cwd=cwd))
 
-    if results and not exit_zero:
+    if visible and not exit_zero:
         sys.exit(1)
 
 
