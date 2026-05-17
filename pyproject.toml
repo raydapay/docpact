@@ -104,7 +104,6 @@ branch = true
 # Remove each path from this list when the module ships with tests.
 omit = [
     "src/docpact/__main__.py",
-    "src/docpact/config.py",
     "src/docpact/rules/mcp/mcp001_decorator_docstring_conflict.py",
     "src/docpact/testing.py",
 ]

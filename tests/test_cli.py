@@ -12,8 +12,12 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _run(*args: str) -> object:
+    """Invoke the CLI in an isolated directory so no project config is found."""
     runner = CliRunner()
-    return runner.invoke(main, list(args), catch_exceptions=False)
+    with runner.isolated_filesystem() as td:
+        # Write a bare pyproject.toml to stop the upward config walk here.
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        return runner.invoke(main, list(args), catch_exceptions=False)
 
 
 # ---------------------------------------------------------------------------
@@ -78,10 +82,8 @@ def test_check_directory_walks_py_files(tmp_path: Path) -> None:
     (sub / "a.py").write_text("def foo(): pass\n")
     (sub / "b.py").write_text("def bar(): pass\n")
     result = _run("check", str(tmp_path))
-    # Both functions are missing docstrings — should find errors.
     assert result.exit_code == 1  # type: ignore[union-attr]
-    output = result.output  # type: ignore[union-attr]
-    assert "DOC001" in output
+    assert "DOC001" in result.output  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------
@@ -104,8 +106,51 @@ def test_check_shows_relative_paths(tmp_path: Path) -> None:
     src = tmp_path / "example.py"
     src.write_text("def foo(x: int) -> None: pass\n")
     runner = CliRunner()
-    # Invoke from tmp_path so paths are relative.
-    result = runner.invoke(main, ["check", str(src)], catch_exceptions=False)
-    # Path should be in output when errors exist.
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        result = runner.invoke(main, ["check", str(src)], catch_exceptions=False)
     assert result.exit_code == 1
     assert "DOC001" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Config integration
+# ---------------------------------------------------------------------------
+
+
+def test_check_respects_select_flag(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int, y: str) -> None:\n    pass\n")
+    # Only select MCP rules — DOC001 should not fire.
+    result = _run("check", "--select", "MCP", "--exit-zero", str(src))
+    assert "DOC001" not in result.output  # type: ignore[union-attr]
+
+
+def test_check_respects_ignore_flag(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    result = _run("check", "--ignore", "DOC001", "--exit-zero", str(src))
+    assert "DOC001" not in result.output  # type: ignore[union-attr]
+
+
+def test_check_config_file_select(tmp_path: Path) -> None:
+    (tmp_path / "docpact.toml").write_text('select = ["MCP"]\n')
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "docpact.toml").write_text('select = ["MCP"]\n')
+        result = runner.invoke(main, ["check", "--exit-zero", str(src)], catch_exceptions=False)
+    assert "DOC001" not in result.output
+
+
+def test_check_config_exclude_skips_files(tmp_path: Path) -> None:
+    sub = tmp_path / "legacy"
+    sub.mkdir()
+    (sub / "old.py").write_text("def foo(): pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "docpact.toml").write_text(f'exclude = ["{sub}/old.py"]\n')
+        result = runner.invoke(main, ["check", "--exit-zero", str(sub)], catch_exceptions=False)
+    # File was excluded — no DOC001 output
+    assert "DOC001" not in result.output

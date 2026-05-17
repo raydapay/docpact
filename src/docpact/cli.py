@@ -20,6 +20,7 @@ import click
 
 import docpact.rules.doc.doc001_missing_docstring
 import docpact.rules.doc.doc007_param_mismatch  # noqa: F401
+from docpact.config import Config, file_ignores_for, file_is_excluded, load_config, rule_is_enabled
 from docpact.output import format_summary, format_text
 from docpact.parser.docstring import GoogleParser
 from docpact.parser.source import extract_functions
@@ -30,30 +31,41 @@ if TYPE_CHECKING:
     from docpact.model.diagnostic import RuleResult
 
 
-def _collect_py_files(paths: tuple[str, ...]) -> list[Path]:
+def _collect_py_files(paths: tuple[str, ...], config: Config) -> list[Path]:
     result: list[Path] = []
     for p in paths:
         path = Path(p)
         if path.is_dir():
-            result.extend(sorted(path.rglob("*.py")))
+            for f in sorted(path.rglob("*.py")):
+                if not file_is_excluded(f, config.exclude):
+                    result.append(f)
         else:
-            result.append(path)
+            if not file_is_excluded(path, config.exclude):
+                result.append(path)
     return result
 
 
-def _run_checks(py_files: list[Path]) -> list[RuleResult]:
+def _run_checks(py_files: list[Path], config: Config) -> list[RuleResult]:
     parser = GoogleParser()
     rules = all_rules()
     results: list[RuleResult] = []
 
     for file_path in py_files:
+        extra_ignores = file_ignores_for(file_path, config.per_file_ignores)
         functions = extract_functions(file_path)
         for func in functions:
             doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
-            tier = assign_tier(func)
+            tier = assign_tier(func, config.tier_overrides)
             config_options: dict[str, object] = {"tier": tier}
             for meta, rule_fn in rules.values():
-                cfg = RuleConfig(severity=meta.default_severity, options=config_options)
+                if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
+                    continue
+                if not rule_is_enabled(
+                    meta.code, meta.namespace, ("DOC", "MCP", "FIX"), extra_ignores
+                ):
+                    continue
+                severity = config.rule_severities.get(meta.code, meta.default_severity)
+                cfg = RuleConfig(severity=severity, options=config_options)
                 results.extend(rule_fn(func, doc, cfg))
 
     results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
@@ -78,16 +90,59 @@ def main() -> None:
     help="Output format.",
 )
 @click.option("--exit-zero", is_flag=True, help="Always exit 0, even when errors are found.")
+@click.option(
+    "--select",
+    "cli_select",
+    multiple=True,
+    metavar="CODE",
+    help="Rule codes or prefixes to enable (overrides config).",
+)
+@click.option(
+    "--ignore",
+    "cli_ignore",
+    multiple=True,
+    metavar="CODE",
+    help="Rule codes or prefixes to disable (overrides config).",
+)
 def check(
     paths: tuple[str, ...],
     fix: bool,
     unsafe_fixes: bool,
     output_format: str,
     exit_zero: bool,
+    cli_select: tuple[str, ...],
+    cli_ignore: tuple[str, ...],
 ) -> None:
     """Check docstrings against the configured schema."""
-    py_files = _collect_py_files(paths)
-    results = _run_checks(py_files)
+    config = load_config(Path.cwd())
+
+    if cli_select:
+        config = Config(
+            schema=config.schema,
+            docstring_format=config.docstring_format,
+            select=cli_select,
+            ignore=config.ignore,
+            exclude=config.exclude,
+            heuristics_default=config.heuristics_default,
+            per_file_ignores=config.per_file_ignores,
+            tier_overrides=config.tier_overrides,
+            rule_severities=config.rule_severities,
+        )
+    if cli_ignore:
+        config = Config(
+            schema=config.schema,
+            docstring_format=config.docstring_format,
+            select=config.select,
+            ignore=(*config.ignore, *cli_ignore),
+            exclude=config.exclude,
+            heuristics_default=config.heuristics_default,
+            per_file_ignores=config.per_file_ignores,
+            tier_overrides=config.tier_overrides,
+            rule_severities=config.rule_severities,
+        )
+
+    py_files = _collect_py_files(paths, config)
+    results = _run_checks(py_files, config)
 
     cwd = Path.cwd()
     if output_format == "text":
