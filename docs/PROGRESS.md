@@ -30,7 +30,7 @@ Commit: `5611abf`
 - Tooling: replaced mypy with ty; added `Makefile`; `make verify` passes.
 
 ### Phase 2 — Tier assignment and rule registry ✓
-Commit: `HEAD` (to be filled after commit)
+Commit: `049bae8`
 
 - `src/docpact/tiers.py` — `assign_tier` implements all 7 rules from spec
   §10.1 using fnmatch for file-path glob patterns in tier_overrides.
