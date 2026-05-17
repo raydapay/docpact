@@ -7,7 +7,7 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**Phase 5 complete. Phase 6 (JSON output + suppression) is next.**
+**Phase 7 complete. Phase 8 (supporting commands) is next.**
 
 ---
 
@@ -74,17 +74,39 @@ Commit: `5b86cdf`
 - CLI: `--fix`, `--unsafe-fixes`, `--diff` all wired and tested.
 - 231 tests, 96% coverage.
 
-### Phase 6 — Output
-Status: **not started**
+### Phase 6 — Output ✓
+Commit: `cce438e`
 
-- JSON output format with stable schema.
-- Suppression handling (`# noqa: CODE`).
+- `src/docpact/output/__init__.py` — `format_json` with versioned envelope
+  `{"version":"1", "diagnostics":[...], "summary":{...}}`; each diagnostic
+  includes fixable/unsafe_fixable flags and cwd-relativised path.
+- `src/docpact/suppress.py` — `parse_suppressions`, `is_suppressed`,
+  `apply_suppressions`; bare `# noqa` suppresses all codes; filters after
+  rules run and before output/exit-code evaluation.
+- CLI: `--format json` wired; `_run_checks` returns per-file suppression
+  maps; `visible` filtered list used for output and exit code.
+- 273 tests, 97% coverage.
 
-### Phase 7 — Remaining rules
-Status: **not started**
+### Phase 7 — Remaining rules ✓
+Commit: `394e0c5`
 
-- `DOC012`, `DOC013`, `DOC014`, `DOC050`, `DOC051`, `DOC098`, `DOC099`.
-- `MCP001`, `FIX001`.
+- `DOC012`: required section missing for tier (Args, Returns, Raises,
+  Constraints, Stability, MCP). Fires when docstring present but section
+  absent; canonical `None.` sections satisfy the check.
+- `DOC013`: non-canonical empty section (N/A, None without period, blank
+  body). Warning. Detection only; byte-range fix deferred.
+- `DOC014`: suspected parameter typo via difflib similarity ≥ 0.6.
+  Warning, no fix (intent ambiguous).
+- `DOC051`: Constraints section duplicates Annotated metadata. Heuristic:
+  numeric values from MaxLen/MinLen/Ge/Le/etc. matched against prose.
+- `DOC099`: unfilled `[FILL]` stub marker.
+- `MCP001`: both decorator `description=` and docstring `MCP:` section
+  present. Detection only; section-removal fix deferred.
+- `FIX001`: bare `# noqa` without specific codes. Line-level rule wired
+  into `_run_checks` via `check_bare_noqa`.
+- `DOC050`, `DOC098`: registered stubs. DOC050 needs class-level analysis
+  (Phase 8). DOC098 needs `--doctest` flag.
+- 361 tests, 97% coverage.
 
 ### Phase 8 — Supporting commands
 Status: **not started**
