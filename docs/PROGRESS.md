@@ -7,7 +7,7 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**Phase 3 complete. Phase 4 (configuration loading) is next.**
+**Phase 4 complete. Phase 5 (fix engine) is next.**
 
 ---
 
@@ -53,11 +53,17 @@ Commit: `f62cfbe`
   runs all registered rules, sorts and emits results, exits 1 on errors.
 - Tests: 174 total, 98% coverage.
 
-### Phase 4 — Configuration
-Status: **not started**
+### Phase 4 — Configuration ✓
+Commit: `c59640d`
 
-- `src/docpact/config.py` — pyproject.toml / docpact.toml loading per spec §14.
-- Wire config into rule selection and tier overrides.
+- `src/docpact/config.py` — `load_config()` with upward walk; parses
+  `docpact.toml` or `pyproject.toml [tool.docpact]`; resolves all keys
+  into a typed frozen `Config` dataclass; docpact.toml wins with warning.
+  Exports `rule_is_enabled`, `file_ignores_for`, `file_is_excluded`.
+- CLI `check` command now applies select/ignore, tier_overrides,
+  rule_severities, per_file_ignores, and exclude patterns.
+- CLI tests run in isolated_filesystem to avoid project config.
+- 208 tests, 97% coverage.
 
 ### Phase 5 — Fix engine
 Status: **not started**
