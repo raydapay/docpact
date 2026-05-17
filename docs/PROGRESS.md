@@ -7,7 +7,7 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**Phase 4 complete. Phase 5 (fix engine) is next.**
+**Phase 5 complete. Phase 6 (JSON output + suppression) is next.**
 
 ---
 
@@ -65,11 +65,14 @@ Commit: `c59640d`
 - CLI tests run in isolated_filesystem to avoid project config.
 - 208 tests, 97% coverage.
 
-### Phase 5 — Fix engine
-Status: **not started**
+### Phase 5 — Fix engine ✓
+Commit: `5b86cdf`
 
-- Apply fixes in-place; conflict detection (no overlapping ranges).
-- `--fix` and `--unsafe-fixes` flags; `--diff` dry-run.
+- `src/docpact/fix.py` — `apply_fixes` (in-place, end-to-start, conflict
+  detection per file, deduplication) and `diff_fixes` (unified diff,
+  no write). `ConflictError` for overlapping range pairs.
+- CLI: `--fix`, `--unsafe-fixes`, `--diff` all wired and tested.
+- 231 tests, 96% coverage.
 
 ### Phase 6 — Output
 Status: **not started**
