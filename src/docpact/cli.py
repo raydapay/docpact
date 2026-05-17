@@ -21,6 +21,7 @@ import click
 import docpact.rules.doc.doc001_missing_docstring
 import docpact.rules.doc.doc007_param_mismatch  # noqa: F401
 from docpact.config import Config, file_ignores_for, file_is_excluded, load_config, rule_is_enabled
+from docpact.fix import apply_fixes, diff_fixes
 from docpact.output import format_summary, format_text
 from docpact.parser.docstring import GoogleParser
 from docpact.parser.source import extract_functions
@@ -80,8 +81,13 @@ def main() -> None:
 
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
-@click.option("--fix", is_flag=True, help="Apply safe fixes in-place.")
-@click.option("--unsafe-fixes", is_flag=True, help="Apply unsafe fixes. Requires --fix.")
+@click.option("--fix", "do_fix", is_flag=True, help="Apply safe fixes in-place.")
+@click.option(
+    "--unsafe-fixes",
+    is_flag=True,
+    help="Apply unsafe fixes in-place. Requires --fix.",
+)
+@click.option("--diff", is_flag=True, help="Show diff of fixes without writing files.")
 @click.option(
     "--format",
     "output_format",
@@ -106,8 +112,9 @@ def main() -> None:
 )
 def check(
     paths: tuple[str, ...],
-    fix: bool,
+    do_fix: bool,
     unsafe_fixes: bool,
+    diff: bool,
     output_format: str,
     exit_zero: bool,
     cli_select: tuple[str, ...],
@@ -143,6 +150,22 @@ def check(
 
     py_files = _collect_py_files(paths, config)
     results = _run_checks(py_files, config)
+
+    apply_unsafe = unsafe_fixes and do_fix
+
+    if diff:
+        patch = diff_fixes(results, unsafe=apply_unsafe)
+        if patch:
+            click.echo(patch, nl=False)
+        sys.exit(0)
+
+    if do_fix:
+        modified, conflicts = apply_fixes(results, unsafe=apply_unsafe)
+        for conflict in conflicts:
+            click.echo(f"warning: {conflict}", err=True)
+        # Re-run checks on modified files so reported results reflect post-fix state.
+        if modified:
+            results = _run_checks(py_files, config)
 
     cwd = Path.cwd()
     if output_format == "text":
