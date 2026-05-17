@@ -95,5 +95,9 @@ class PublicService:
 
     @property
     def display_name(self) -> str:
-        """Human-readable service name."""
+        """Human-readable service name.
+
+        Returns:
+            The service name with underscores replaced by spaces.
+        """
         return self.name.replace("_", " ").title()

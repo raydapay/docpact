@@ -303,7 +303,11 @@ def test_cli_fix_applies_doc001_stub(tmp_path: Path) -> None:
     runner = CliRunner()
     with runner.isolated_filesystem() as td:
         (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
-        result = runner.invoke(main, ["check", "--fix", str(src)], catch_exceptions=False)
+        result = runner.invoke(
+            main,
+            ["check", "--fix", "--ignore", "DOC099", str(src)],
+            catch_exceptions=False,
+        )
 
     assert result.exit_code == 0
     content = src.read_text()

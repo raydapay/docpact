@@ -11,6 +11,14 @@ import pytest
 # ---------------------------------------------------------------------------
 import docpact.rules.doc.doc001_missing_docstring
 import docpact.rules.doc.doc007_param_mismatch
+import docpact.rules.doc.doc012_missing_section
+import docpact.rules.doc.doc013_noncanonical_empty
+import docpact.rules.doc.doc014_suspicious_param
+import docpact.rules.doc.doc050_pydantic_field
+import docpact.rules.doc.doc051_annotated_constraint
+import docpact.rules.doc.doc098_doctest_exception
+import docpact.rules.doc.doc099_fill_marker
+import docpact.rules.fix.fix001_bare_noqa
 import docpact.rules.mcp.mcp001_decorator_docstring_conflict  # noqa: F401
 from docpact.model.diagnostic import Severity
 from docpact.rules._registry import RuleConfig, RuleMetadata, all_rules, register
@@ -42,6 +50,14 @@ def test_stub_rules_are_registered() -> None:
     rules = all_rules()
     assert "DOC001" in rules
     assert "DOC007" in rules
+    assert "DOC012" in rules
+    assert "DOC013" in rules
+    assert "DOC014" in rules
+    assert "DOC050" in rules
+    assert "DOC051" in rules
+    assert "DOC098" in rules
+    assert "DOC099" in rules
+    assert "FIX001" in rules
     assert "MCP001" in rules
 
 

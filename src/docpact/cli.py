@@ -19,13 +19,23 @@ from typing import TYPE_CHECKING
 import click
 
 import docpact.rules.doc.doc001_missing_docstring
-import docpact.rules.doc.doc007_param_mismatch  # noqa: F401
+import docpact.rules.doc.doc007_param_mismatch
+import docpact.rules.doc.doc012_missing_section
+import docpact.rules.doc.doc013_noncanonical_empty
+import docpact.rules.doc.doc014_suspicious_param
+import docpact.rules.doc.doc050_pydantic_field
+import docpact.rules.doc.doc051_annotated_constraint
+import docpact.rules.doc.doc098_doctest_exception
+import docpact.rules.doc.doc099_fill_marker
+import docpact.rules.fix.fix001_bare_noqa
+import docpact.rules.mcp.mcp001_decorator_docstring_conflict  # noqa: F401
 from docpact.config import Config, file_ignores_for, file_is_excluded, load_config, rule_is_enabled
 from docpact.fix import apply_fixes, diff_fixes
 from docpact.output import format_json, format_summary, format_text
 from docpact.parser.docstring import GoogleParser
 from docpact.parser.source import extract_functions
 from docpact.rules._registry import RuleConfig, all_rules
+from docpact.rules.fix.fix001_bare_noqa import check_bare_noqa
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
 
@@ -58,14 +68,28 @@ def _run_checks(
 
     for file_path in py_files:
         source_text = file_path.read_text(errors="replace")
-        suppressions[file_path] = parse_suppressions(source_text)
+        file_suppressions = parse_suppressions(source_text)
+        suppressions[file_path] = file_suppressions
         extra_ignores = file_ignores_for(file_path, config.per_file_ignores)
+
+        # FIX001 is a line-level rule; run it per-file against the suppression map.
+        if "FIX001" in rules:
+            fix001_meta, _ = rules["FIX001"]
+            if rule_is_enabled("FIX001", "FIX", config.select, config.ignore) and rule_is_enabled(
+                "FIX001", "FIX", ("DOC", "MCP", "FIX"), extra_ignores
+            ):
+                severity = config.rule_severities.get("FIX001", fix001_meta.default_severity)
+                cfg = RuleConfig(severity=severity, options={})
+                results.extend(check_bare_noqa(source_text, file_suppressions, file_path, cfg))
+
         functions = extract_functions(file_path)
         for func in functions:
             doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
             tier = assign_tier(func, config.tier_overrides)
             config_options: dict[str, object] = {"tier": tier}
             for meta, rule_fn in rules.values():
+                if meta.code == "FIX001":
+                    continue  # handled above as a file-level rule
                 if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
                     continue
                 if not rule_is_enabled(
