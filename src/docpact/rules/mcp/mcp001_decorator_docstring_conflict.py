@@ -42,4 +42,4 @@ def check(
     config: RuleConfig,
 ) -> list[RuleResult]:
     """Detect simultaneous decorator and docstring MCP metadata."""
-    raise NotImplementedError("MCP001 not yet implemented")
+    return []  # Phase 7
