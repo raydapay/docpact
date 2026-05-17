@@ -7,7 +7,7 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**Phase 1 complete. Phase 2 (tier assignment + rule registry) is next.**
+**Phase 2 complete. Phase 3 (DOC001, DOC007, end-to-end CLI) is next.**
 
 ---
 
@@ -29,12 +29,15 @@ Commit: `5611abf`
 - Tests: 85 tests, 97% coverage on implemented modules.
 - Tooling: replaced mypy with ty; added `Makefile`; `make verify` passes.
 
-### Phase 2 — Tier assignment and rule registry
-Status: **not started**
+### Phase 2 — Tier assignment and rule registry ✓
+Commit: `HEAD` (to be filled after commit)
 
-- `src/docpact/tiers.py` — implement `assign_tier` per spec §10.1.
-- `src/docpact/rules/_registry.py` — verify end-to-end with a stub rule.
-- Tests: `tests/test_tiers.py`, `tests/test_rules/test_registry.py`.
+- `src/docpact/tiers.py` — `assign_tier` implements all 7 rules from spec
+  §10.1 using fnmatch for file-path glob patterns in tier_overrides.
+- `src/docpact/rules/_registry.py` — already complete in skeleton; verified
+  end-to-end with stub rule imports.
+- Tests: `tests/test_tiers.py` (40 tests), `tests/test_rules/test_registry.py`
+  (7 tests). 132 total, all passing.
 
 ### Phase 3 — First rules
 Status: **not started**
