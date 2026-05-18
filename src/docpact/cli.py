@@ -218,16 +218,129 @@ def check(
 
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
-def generate(paths: tuple[str, ...]) -> None:
+@click.option("--diff", is_flag=True, help="Show diff without writing files.")
+def generate(paths: tuple[str, ...], diff: bool) -> None:
     """Generate stub docstrings for undocumented functions."""
-    raise NotImplementedError("generate command not yet implemented")
+    config = load_config(Path.cwd())
+    # Only DOC001 produces stubs; no other rule should drive generation.
+    stub_config = Config(
+        schema=config.schema,
+        docstring_format=config.docstring_format,
+        select=("DOC001",),
+        ignore=(),
+        exclude=config.exclude,
+        heuristics_default=config.heuristics_default,
+        per_file_ignores=config.per_file_ignores,
+        tier_overrides=config.tier_overrides,
+        rule_severities=config.rule_severities,
+    )
+    py_files = _collect_py_files(paths, stub_config)
+    results, suppressions = _run_checks(py_files, stub_config)
+    visible = apply_suppressions(results, suppressions)
+
+    if diff:
+        patch = diff_fixes(visible)
+        if patch:
+            click.echo(patch, nl=False)
+        sys.exit(0)
+
+    modified, conflicts = apply_fixes(visible)
+    for conflict in conflicts:
+        click.echo(f"warning: {conflict}", err=True)
+
+    if modified:
+        cwd = Path.cwd()
+        for path in sorted(modified):
+            try:
+                rel = path.relative_to(cwd)
+            except ValueError:
+                rel = path
+            click.echo(f"Generated: {rel}")
+        click.echo(f"Generated {sum(1 for r in visible if r.fix is not None)} stub docstring(s).")
+    else:
+        click.echo("No undocumented functions found.")
+
+
+# Per-tier schema: (title, required, recommended, optional)
+_TIER_SCHEMA: dict[int, tuple[str, list[str], list[str], list[str]]] = {
+    1: (
+        "Internal functions",
+        ["Summary"],
+        ["Args (when non-trivial)", "Returns (when non-trivial)"],
+        ["Raises", "Notes", "Examples"],
+    ),
+    2: (
+        "Package-public functions and methods",
+        ["Summary", "Args (when params present)", "Returns (if non-None)"],
+        ["Raises", "Constraints", "Stability"],
+        ["Mutates", "Notes", "See Also", "Examples", "Alternatives", "References"],
+    ),
+    3: (
+        "MCP-exposed functions",
+        [
+            "Summary",
+            "Args",
+            "Returns",
+            "Raises",
+            "Constraints",
+            "Stability",
+            "MCP (or decorator description=)",
+        ],
+        ["Mutates", "See Also"],
+        ["Notes", "Alternatives", "References", "Examples"],
+    ),
+    4: (
+        "FastAPI routes via FastMCP.from_fastapi()",
+        [
+            "Summary",
+            "Args",
+            "Returns",
+            "Raises",
+            "Constraints",
+            "Stability",
+            "MCP (or decorator description=)",
+        ],
+        ["Mutates", "See Also"],
+        ["Notes", "Alternatives", "References", "Examples"],
+    ),
+}
+
+
+def _wrap_items(items: list[str], indent: int, width: int = 78) -> str:
+    """Format a comma-separated list with line wrapping at width."""
+    prefix = " " * indent
+    line = ", ".join(items)
+    if len(prefix) + len(line) <= width:
+        return prefix + line
+    # Wrap long lists.
+    lines: list[str] = []
+    current = prefix
+    continuation = " " * indent
+    for i, item in enumerate(items):
+        sep = ", " if i < len(items) - 1 else ""
+        candidate = current + item + sep
+        if lines and len(candidate) > width:
+            lines.append(current.rstrip(", "))
+            current = continuation + item + sep
+        else:
+            current = candidate
+    lines.append(current)
+    return "\n".join(lines)
 
 
 @main.command(name="show-schema")
 @click.option("--tier", type=click.IntRange(1, 4), required=True)
 def show_schema(tier: int) -> None:
     """Print the schema requirements for a given tier."""
-    raise NotImplementedError("show-schema command not yet implemented")
+    title, required, recommended, optional = _TIER_SCHEMA[tier]
+    click.echo(f"\nTier {tier} — {title}\n")
+    label_width = 13  # "Recommended: " is the widest label
+    click.echo(f"  {'Required:':<{label_width}}{_wrap_items(required, label_width + 2).lstrip()}")
+    click.echo(
+        f"  {'Recommended:':<{label_width}}{_wrap_items(recommended, label_width + 2).lstrip()}"
+    )
+    click.echo(f"  {'Optional:':<{label_width}}{_wrap_items(optional, label_width + 2).lstrip()}")
+    click.echo()
 
 
 @main.command(name="list-rules")
@@ -239,7 +352,36 @@ def show_schema(tier: int) -> None:
 )
 def list_rules(output_format: str) -> None:
     """List all defined rules with their default severity."""
-    raise NotImplementedError("list-rules command not yet implemented")
+    import json as _json
+
+    rules = sorted(all_rules().items(), key=lambda kv: kv[0])
+
+    if output_format == "json":
+        data = [
+            {
+                "code": meta.code,
+                "namespace": meta.namespace,
+                "severity": meta.default_severity.value,
+                "fixable": meta.fixable,
+                "unsafe_fixable": meta.unsafe_fixable,
+                "summary": meta.summary,
+            }
+            for _, (meta, _) in rules
+        ]
+        click.echo(_json.dumps(data, indent=2))
+        return
+
+    # Text: aligned table.
+    header = f"{'Code':<8}  {'Severity':<8}  {'Fix':<5}  Summary"
+    sep = f"{'─' * 8}  {'─' * 8}  {'─' * 5}  {'─' * 48}"
+    click.echo(header)
+    click.echo(sep)
+    for _, (meta, _) in rules:
+        fix_marker = "[*] " if meta.fixable else "    "
+        fix_marker += "[!]" if meta.unsafe_fixable else "   "
+        click.echo(
+            f"{meta.code:<8}  {meta.default_severity.value:<8}  {fix_marker}  {meta.summary}"
+        )
 
 
 if __name__ == "__main__":
