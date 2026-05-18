@@ -53,7 +53,12 @@ Items explicitly deferred from v0.1 (spec §5.3 and §5.4):
   layer on top.
 - **NumPy docstring parser** — parser abstraction is in place; add the parser,
   wire it to `format = "numpy"` config.
-- **Sphinx docstring parser** — lower priority than NumPy; not on roadmap yet.
+- **Sphinx/RST docstring parser** — griffe supports it and the shared
+  ``_sections_from_griffe`` helper is already in place. Deliberately not
+  scheduled: RST is a legacy choice for new agent-facing code, and the
+  `:type:` / `:param:` split means type information is silently dropped by
+  the current section model. Add when a real adopter with a Sphinx codebase
+  requests it.
 - **SARIF output** — `--format sarif`. Only text and JSON in v0.1.
 - **TY rules** — ty cross-validation namespace. Allocated, no rules.
 - **HEUR rules** — heuristic namespace. Allocated, no rules.
