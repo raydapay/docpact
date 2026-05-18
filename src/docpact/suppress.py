@@ -7,8 +7,8 @@ diagnostics before output and exit-code calculation. Fixes are still applied
 to suppressed diagnostics.
 
 Syntax (default marker ``nodo``):
-    # nodo: DOC001
-    # nodo: DOC001, DOC007
+    # nodo: DOC001 -- reason text
+    # nodo: DOC001, DOC007 -- reason text
     # nodo: DOC001 -- optional reason text
 
 Bare marker (without codes) suppresses all diagnostics on that line and

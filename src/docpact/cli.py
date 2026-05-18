@@ -29,6 +29,7 @@ import docpact.rules.doc.doc051_annotated_constraint
 import docpact.rules.doc.doc098_doctest_exception
 import docpact.rules.doc.doc099_fill_marker
 import docpact.rules.fix.fix001_bare_noqa
+import docpact.rules.fix.fix002_no_reason
 import docpact.rules.mcp.mcp001_decorator_docstring_conflict  # noqa: F401
 from docpact.config import Config, file_ignores_for, file_is_excluded, load_config, rule_is_enabled
 from docpact.fix import apply_fixes, diff_fixes
@@ -38,6 +39,7 @@ from docpact.parser.source import extract_functions
 from docpact.rules._registry import RuleConfig, all_rules
 from docpact.rules.doc.doc002_module_docstring import check_module_docstring
 from docpact.rules.fix.fix001_bare_noqa import check_bare_noqa
+from docpact.rules.fix.fix002_no_reason import check_no_reason
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
 
@@ -86,6 +88,23 @@ def _run_checks(
                 cfg = RuleConfig(severity=severity, options={})
                 results.extend(check_bare_noqa(source_text, file_suppressions, file_path, cfg))
 
+        if "FIX002" in rules:
+            fix002_meta, _ = rules["FIX002"]
+            if rule_is_enabled("FIX002", "FIX", config.select, config.ignore) and rule_is_enabled(
+                "FIX002", "FIX", ("DOC", "MCP", "FIX"), extra_ignores
+            ):
+                severity = config.rule_severities.get("FIX002", fix002_meta.default_severity)
+                cfg = RuleConfig(severity=severity, options={})
+                results.extend(
+                    check_no_reason(
+                        source_text,
+                        file_suppressions,
+                        file_path,
+                        cfg,
+                        markers=config.suppress_comment,
+                    )
+                )
+
         if "DOC002" in rules:
             doc002_meta, _ = rules["DOC002"]
             if rule_is_enabled("DOC002", "DOC", config.select, config.ignore) and rule_is_enabled(
@@ -101,7 +120,7 @@ def _run_checks(
             tier = assign_tier(func, config.tier_overrides)
             config_options: dict[str, object] = {"tier": tier}
             for meta, rule_fn in rules.values():
-                if meta.code in {"FIX001", "DOC002"}:
+                if meta.code in {"FIX001", "FIX002", "DOC002"}:
                     continue  # handled above as file-level rules
                 if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
                     continue

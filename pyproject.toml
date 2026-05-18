@@ -122,7 +122,7 @@ exclude_lines = [
 [tool.docpact]
 schema = "1"
 format = "google"
-select = ["DOC", "MCP"]
+select = ["DOC", "MCP", "FIX"]
 suppress_comment = ["nodo"]
 # tests/ is excluded: test functions have no docstrings by convention and
 # Tier 2 DOC001 noise would drown real signal. scripts/ is excluded for
