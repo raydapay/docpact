@@ -26,8 +26,8 @@ Key facts a fresh session needs:
   signatures; that placement silently fails to suppress because docpact matches on
   `func.line` (the `def` keyword line).
 - `make verify` is the single quality gate. Run it before treating any change done.
-- Generated rule docs live in `docs/rules/`. CI enforces they stay in sync with the
-  registry (`make docs` + `git diff --exit-code docs/rules/`).
+- Generated rule docs live in `docs/rules/`. `make verify` enforces they stay in sync
+  with the registry via `docs-check` (`make docs` + `git status --short docs/rules/`).
 - File-level rules (DOC002, DOC003, DOC050, FIX001, FIX002) are wired directly in
   `_run_checks` in `cli.py` and skipped in the function-level loop via a code skip set.
 - `format = "numpy"` in `[tool.docpact]` selects `NumpyParser`; default is Google.

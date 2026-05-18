@@ -11,7 +11,7 @@ help:
 	@echo "  make typecheck      Run static type analysis using ty"
 	@echo "  make test           Run pytest (fast, no coverage)"
 	@echo "  make coverage       Run pytest with coverage (fail_under=85)"
-	@echo "  make verify         Full pipeline: format → lint → typecheck → coverage → dogfood"
+	@echo "  make verify         Full pipeline: format → lint → typecheck → coverage → docs-check → dogfood"
 	@echo "  make docs           Generate docs/rules/*.md from the rule registry"
 	@echo "  make docs-check     Verify docs/rules/*.md matches registry (CI gate)"
 	@echo "  make dogfood        Run docpact on its own source (self-check)"
@@ -48,7 +48,11 @@ docs:
 
 docs-check:
 	uv run python scripts/generate_rule_docs.py
-	git diff --exit-code docs/rules/
+	@if [ -n "$$(git status --short docs/rules/)" ]; then \
+	  echo "docs/rules/ is out of sync with the registry:"; \
+	  git status --short docs/rules/; \
+	  exit 1; \
+	fi
 
 dogfood:
 	uv run docpact check src/
@@ -65,6 +69,7 @@ verify:
 	  $(MAKE) lint && \
 	  $(MAKE) typecheck && \
 	  $(MAKE) coverage && \
+	  $(MAKE) docs-check && \
 	  $(MAKE) dogfood && \
 	  echo "Verification successful.") || \
 	 (echo "Verification failed."; exit 1)
