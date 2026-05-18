@@ -10,12 +10,16 @@ Copy this file to those names if needed; treat them as equivalent.
 
 ## Current state
 
-**v0.1 complete. Codebase is self-hosting (docpact checks itself on every CI run).**
+**v0.1 complete. Codebase is self-hosting. Several v0.2 items already shipped.**
 
-Active work: maintenance, v0.2 planning, and any open inbox items.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099,
+MCP001, FIX001–FIX002. 504 tests, 96% coverage.
+
+Active work: maintenance, v0.2 delivery. Next up: SARIF output (`--format sarif`).
 
 Key facts a fresh session needs:
-- Suppression syntax is `# nodo: CODE` (not `# noqa`). See ADR-004.
+- Suppression syntax is `# nodo: CODE -- reason` (not `# noqa`). See ADR-004.
+  FIX001 fires on bare `# nodo`, FIX002 fires when codes present but no `-- reason`.
 - `suppress_comment = ["nodo"]` in `[tool.docpact]` — configurable, accepts a list.
 - Suppression must be on the `def` line: `def foo(  # nodo: CODE` — **not** on the
   closing `) -> None:` line. ruff's formatter moves comments there when it wraps
@@ -24,6 +28,10 @@ Key facts a fresh session needs:
 - `make verify` is the single quality gate. Run it before treating any change done.
 - Generated rule docs live in `docs/rules/`. CI enforces they stay in sync with the
   registry (`make docs` + `git diff --exit-code docs/rules/`).
+- File-level rules (DOC002, DOC003, DOC050, FIX001, FIX002) are wired directly in
+  `_run_checks` in `cli.py` and skipped in the function-level loop via a code skip set.
+- `format = "numpy"` in `[tool.docpact]` selects `NumpyParser`; default is Google.
+- docpact's own config uses `select = ["DOC", "MCP", "FIX"]` — FIX namespace opted in.
 
 **The project owner is Ray.** Address him directly when asking questions. Ray's
 working preferences are documented below under "Working with Ray."

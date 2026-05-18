@@ -7,13 +7,45 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**v0.1 complete. Codebase is self-hosting.**
+**v0.1 complete. Codebase is self-hosting. Several v0.2 items already shipped.**
 
-Active: maintenance, v0.2 planning. See "Recent changes" and "v0.2 scope" below.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099,
+MCP001, FIX001–FIX002. 504 tests, 96% coverage.
+
+Active: maintenance, v0.2 delivery. See "Recent changes" and "v0.2 scope" below.
 
 ---
 
 ## Recent changes (post-v0.1)
+
+### NumPy docstring parser — 2026-05-18
+
+- `NumpyParser` added to `src/docpact/parser/docstring.py`, backed by `griffe.parse_numpy`.
+- Shared `_sections_from_griffe` helper extracted; `GoogleParser` refactored to use it.
+  No behaviour change to Google parsing.
+- NumPy `Parameters` → docpact `Args`; `Notes` / `Note` → `Notes`; `See Also` mapped.
+- `format = "numpy"` in `[tool.docpact]` selects `NumpyParser` in `_run_checks`.
+- Config validation updated: `_VALID_FORMATS = {"google", "numpy"}`.
+- RST/Sphinx parser explicitly deferred: infrastructure ready, no demand yet.
+
+### FIX002 — suppression without -- reason — 2026-05-18
+
+- `FIX002` fires at WARNING severity when a suppression names codes but has no `-- reason`.
+- Companion to FIX001. `# nodo: DOC001` fires; `# nodo: DOC001 -- reason` is clean.
+- `FIX` namespace added to docpact's own `select = ["DOC", "MCP", "FIX"]` for dogfooding.
+
+### DOC003 — class-level docstring enforcement — 2026-05-18
+
+- `DOC003` fires at WARNING severity when any class definition has no docstring.
+- Applies to top-level, nested, and inner classes.
+- Unlike DOC002, no default exclusion for `__init__.py` — classes there need docs too.
+
+### DOC050 — Pydantic field missing Field(description=...) — 2026-05-18
+
+- Replaced long-standing stub with a real implementation.
+- Detects Pydantic models via `"BaseModel" in base_name` heuristic.
+- Fires for bare annotations, non-Field defaults, Field() without description=, empty description.
+- Skips private fields (`_name`) and ClassVar fields.
 
 ### DOC002 — module-level docstring enforcement — 2026-05-18
 
@@ -44,35 +76,33 @@ Commits: `db3ae18`, `4c5c8f1`
 
 ---
 
-## v0.2 scope (planned)
+## v0.2 scope
 
-Items explicitly deferred from v0.1 (spec §5.3 and §5.4):
+### Already shipped ✓
+- **NumPy docstring parser** — `format = "numpy"` in config.
+- **DOC002** — module-level docstring enforcement.
+- **DOC003** — class-level docstring enforcement.
+- **DOC050** — Pydantic field missing `Field(description=...)`.
+- **FIX002** — suppression without `-- reason`.
 
-- **pytest plugin** — `docpact[pytest]` extra declared, plugin not implemented.
-  `docpact.testing` programmatic API covers v0.1 testing needs; plugin is a
-  layer on top.
-- **NumPy docstring parser** — parser abstraction is in place; add the parser,
-  wire it to `format = "numpy"` config.
-- **Sphinx/RST docstring parser** — griffe supports it and the shared
-  ``_sections_from_griffe`` helper is already in place. Deliberately not
-  scheduled: RST is a legacy choice for new agent-facing code, and the
-  `:type:` / `:param:` split means type information is silently dropped by
-  the current section model. Add when a real adopter with a Sphinx codebase
-  requests it.
-- **SARIF output** — `--format sarif`. Only text and JSON in v0.1.
+### Remaining
+
+- **SARIF output** — `--format sarif`. Only text and JSON currently. **Next up.**
+- **pytest plugin** — `docpact[pytest]` extra declared, `docpact.testing`
+  programmatic API exists; plugin is a thin layer on top.
+- **Sphinx/RST docstring parser** — infrastructure ready (`_sections_from_griffe`
+  helper exists). Add on demand when a real adopter with a Sphinx codebase requests
+  it; not scheduled.
 - **TY rules** — ty cross-validation namespace. Allocated, no rules.
 - **HEUR rules** — heuristic namespace. Allocated, no rules.
-- **Third-party rule plugin API** — rules are internal in v0.1.
-- **Tier 4 automatic detection** — explicit config-only in v0.1.
+- **Third-party rule plugin API** — rules are internal.
+- **Tier 4 automatic detection** — explicit config-only for now.
 - **Semantic mode** (`SEM` namespace) — LLM-based analysis. No code, no prompts,
-  no API client. Entire subsystem absent from v0.1.
-- **DOC050** (Pydantic field missing description) — registered stub; needs class-level
-  analysis to associate `Field(...)` calls with the enclosing model.
+  no API client. Entire subsystem absent.
 - **DOC098** (doctest exception) — **explicitly out of scope, not merely deferred.**
-  Executing docstring Examples sections has arbitrary side effects. There is no safe
-  sandboxing strategy that does not require reimplementing a full test harness — out
-  of scope for a structural linter. The rule stub remains in the registry so the code
-  is reserved; the check function is permanently empty.
+  Executing docstring Examples sections has arbitrary side effects. No safe
+  sandboxing strategy exists for a structural linter. The rule stub remains in
+  the registry so the code is reserved; the check function is permanently empty.
 
 ---
 
@@ -171,8 +201,8 @@ Commit: `394e0c5`
   present. Detection only; section-removal fix deferred.
 - `FIX001`: bare inline suppression comment without specific codes. Line-level
   rule wired into `_run_checks` via `check_bare_noqa`.
-- `DOC050`, `DOC098`: registered stubs. DOC050 needs class-level analysis
-  (Phase 8). DOC098 needs `--doctest` flag.
+- `DOC050`: registered stub at this phase; implemented post-v0.1 (see "Recent changes").
+- `DOC098`: permanently out of scope (see "v0.2 scope").
 - 361 tests, 97% coverage.
 
 ### Phase 8 — Supporting commands ✓

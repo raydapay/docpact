@@ -26,7 +26,7 @@ Add to `pyproject.toml`:
 ```toml
 [tool.docpact]
 schema = "1"
-format = "google"
+format = "google"   # or "numpy" for NumPy-style docstrings
 select = ["DOC", "MCP"]
 ```
 
@@ -79,18 +79,20 @@ repos:
 |------|----------------|-----------------|
 | DOC001 | Function missing a docstring entirely | ERROR |
 | DOC002 | Module missing a module-level docstring (`__init__.py` excluded by default) | WARNING |
+| DOC003 | Class missing a docstring | WARNING |
 | DOC007 | Args section doesn't match the function signature | ERROR |
 | DOC012 | Required section absent for the function's tier | ERROR |
 | DOC013 | Empty section not in canonical form | WARNING |
 | DOC014 | Suspicious parameter name (likely copy-paste) | WARNING |
-| DOC050 | Pydantic `Field(...)` has no description (stub) | ERROR |
+| DOC050 | Pydantic model field missing `Field(description=...)` | WARNING |
 | DOC051 | Constraints section duplicates Annotated metadata | ERROR |
 | DOC099 | `[FILL]` stub marker not replaced | ERROR |
 | MCP001 | Decorator `description=` and docstring `MCP:` section both present | ERROR |
 | FIX001 | Bare `# nodo` without codes or reason | WARNING |
+| FIX002 | Suppression names codes but has no `-- reason` | WARNING |
 
-The `DOC` and `MCP` namespaces are enabled by default. `FIX` rules are not
-(they target the suppression hygiene of docpact itself). To enable FIX rules:
+The `DOC` and `MCP` namespaces are enabled by default. `FIX` rules enforce
+suppression hygiene and must be opted in:
 
 ```toml
 select = ["DOC", "MCP", "FIX"]
