@@ -7,7 +7,7 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**Phase 7 complete. Phase 8 (supporting commands) is next.**
+**Phase 8 complete. Phase 9 (testing API) is next.**
 
 ---
 
@@ -108,12 +108,17 @@ Commit: `394e0c5`
   (Phase 8). DOC098 needs `--doctest` flag.
 - 361 tests, 97% coverage.
 
-### Phase 8 — Supporting commands
-Status: **not started**
+### Phase 8 — Supporting commands ✓
+Commit: `a6da41f`
 
-- `generate` (stub emission).
-- `show-schema` (tier requirements display).
-- `list-rules`.
+- `generate`: inserts `[FILL]`-stub docstrings for undocumented functions.
+  Reuses DOC001 fix objects; respects `# noqa: DOC001` suppressions and
+  config exclude. `--diff` shows unified diff without writing.
+- `show-schema --tier N`: prints required/recommended/optional sections
+  for the given tier in human-readable form.
+- `list-rules [--format json]`: aligned table or JSON array of all
+  registered rules with code, namespace, severity, fixability, summary.
+- 380 tests, 97% coverage.
 
 ### Phase 9 — Testing API
 Status: **not started**
