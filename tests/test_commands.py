@@ -90,9 +90,9 @@ def test_generate_diff_empty_when_no_stubs_needed(tmp_path: Path) -> None:
     assert result.output == ""
 
 
-def test_generate_noqa_suppressed_function_skipped(tmp_path: Path) -> None:
+def test_generate_nodo_suppressed_function_skipped(tmp_path: Path) -> None:
     src = tmp_path / "t.py"
-    src.write_text("def foo(x: int) -> None:  # noqa: DOC001\n    pass\n")
+    src.write_text("def foo(x: int) -> None:  # nodo: DOC001\n    pass\n")
     r = _runner()
     with r.isolated_filesystem() as td:
         from pathlib import Path as P

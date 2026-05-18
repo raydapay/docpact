@@ -75,9 +75,6 @@ select = [
 ]
 # D-series intentionally disabled. docpact handles docstring rules.
 ignore = []
-# Tell ruff's RUF100 that DOC/MCP/FIX are valid external rule codes so it
-# does not strip # noqa: DOC012 etc. as "unused" when auto-fixing.
-external = ["DOC001", "DOC007", "DOC012", "DOC013", "DOC014", "DOC050", "DOC051", "DOC098", "DOC099", "FIX001", "MCP001"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["D"]
@@ -126,6 +123,7 @@ exclude_lines = [
 schema = "1"
 format = "google"
 select = ["DOC", "MCP"]
+suppress_comment = ["nodo"]
 # tests/ is excluded: test functions have no docstrings by convention and
 # Tier 2 DOC001 noise would drown real signal. scripts/ is excluded for
 # the same reason (dev-only tooling, not the public library surface).

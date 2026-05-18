@@ -1,17 +1,17 @@
-"""FIX001 — Bare # noqa comment without specific rule codes.
+"""FIX001 — Bare inline suppression comment without specific rule codes.
 
-Bare # noqa (no code list) suppresses every docpact diagnostic on the
-line. This makes the suppression opaque to reviewers — it is impossible
-to tell which rule was being suppressed or why. Every suppression should
-name the specific code(s) and include a -- reason.
+A bare suppression comment (no code list) suppresses every docpact diagnostic
+on the line. This makes the suppression opaque to reviewers — it is impossible
+to tell which rule was being suppressed or why. Every suppression should name
+the specific code(s) and include a -- reason.
 
 This is a line-level rule, not a function-level rule. The CLI's source
 scan calls check_bare_noqa directly after parse_suppressions; the
 registered check function is a no-op stub that keeps FIX001 visible in
 list-rules.
 
-Good:   # noqa: DOC001 -- pre-docpact legacy, tracked in #412
-Bad:    # noqa
+Good:   # nodo: DOC001 -- pre-docpact legacy, tracked in #412
+Bad:    # nodo
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     RuleMetadata(
         code="FIX001",
         namespace="FIX",
-        summary="Bare # noqa without specific rule codes",
+        summary="Bare inline suppression without specific rule codes",
         default_severity=Severity.WARNING,
         fixable=False,
         unsafe_fixable=False,
@@ -84,7 +84,7 @@ def check_bare_noqa(
             RuleResult(
                 code="FIX001",
                 severity=config.severity,
-                message="Bare # noqa suppresses all rules; add specific codes and a -- reason",
+                message="Bare suppression comment suppresses all rules; add codes and a -- reason",
                 location=SourceLocation(
                     file_path=file_path,
                     line=lineno,

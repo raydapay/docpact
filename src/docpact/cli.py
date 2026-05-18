@@ -70,7 +70,7 @@ def _run_checks(
 
     for file_path in py_files:
         source_text = file_path.read_text(errors="replace")
-        file_suppressions = parse_suppressions(source_text)
+        file_suppressions = parse_suppressions(source_text, markers=config.suppress_comment)
         suppressions[file_path] = file_suppressions
         extra_ignores = file_ignores_for(file_path, config.per_file_ignores)
 
@@ -143,7 +143,7 @@ def main() -> None:
     metavar="CODE",
     help="Rule codes or prefixes to disable (overrides config).",
 )
-def check(  # noqa: DOC012
+def check(  # nodo: DOC012
     paths: tuple[str, ...],
     do_fix: bool,
     unsafe_fixes: bool,
@@ -221,7 +221,7 @@ def check(  # noqa: DOC012
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
 @click.option("--diff", is_flag=True, help="Show diff without writing files.")
-def generate(paths: tuple[str, ...], diff: bool) -> None:  # noqa: DOC012
+def generate(paths: tuple[str, ...], diff: bool) -> None:  # nodo: DOC012
     """Generate stub docstrings for undocumented functions."""
     config = load_config(Path.cwd())
     # Only DOC001 produces stubs; no other rule should drive generation.
@@ -332,7 +332,7 @@ def _wrap_items(items: list[str], indent: int, width: int = 78) -> str:
 
 @main.command(name="show-schema")
 @click.option("--tier", type=click.IntRange(1, 4), required=True)
-def show_schema(tier: int) -> None:  # noqa: DOC012
+def show_schema(tier: int) -> None:  # nodo: DOC012
     """Print the schema requirements for a given tier."""
     title, required, recommended, optional = _TIER_SCHEMA[tier]
     click.echo(f"\nTier {tier} — {title}\n")
@@ -352,7 +352,7 @@ def show_schema(tier: int) -> None:  # noqa: DOC012
     type=click.Choice(["text", "json"]),
     default="text",
 )
-def list_rules(output_format: str) -> None:  # noqa: DOC012
+def list_rules(output_format: str) -> None:  # nodo: DOC012
     """List all defined rules with their default severity."""
     import json as _json
 

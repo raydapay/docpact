@@ -25,50 +25,85 @@ def _result(code: str, path: Path, line: int = 1) -> RuleResult:
 
 
 # ---------------------------------------------------------------------------
-# parse_suppressions
+# parse_suppressions — default marker (nodo)
 # ---------------------------------------------------------------------------
 
 
-def test_no_noqa_returns_empty() -> None:
+def test_no_marker_returns_empty() -> None:
     assert parse_suppressions("def foo(): pass\n") == {}
 
 
 def test_single_code() -> None:
-    result = parse_suppressions("def foo(): pass  # noqa: DOC001\n")
+    result = parse_suppressions("def foo(): pass  # nodo: DOC001\n")
     assert result == {1: frozenset({"DOC001"})}
 
 
 def test_multiple_codes_comma_separated() -> None:
-    result = parse_suppressions("def foo(): pass  # noqa: DOC001, DOC007\n")
+    result = parse_suppressions("def foo(): pass  # nodo: DOC001, DOC007\n")
     assert result == {1: frozenset({"DOC001", "DOC007"})}
 
 
-def test_bare_noqa_returns_empty_frozenset() -> None:
-    result = parse_suppressions("def foo(): pass  # noqa\n")
+def test_bare_marker_returns_empty_frozenset() -> None:
+    result = parse_suppressions("def foo(): pass  # nodo\n")
     assert result == {1: frozenset()}
 
 
-def test_noqa_with_reason_after_dash() -> None:
-    source = "def foo(): pass  # noqa: DOC001 -- legacy, tracked in #412\n"
+def test_marker_with_reason_after_dash() -> None:
+    source = "def foo(): pass  # nodo: DOC001 -- legacy, tracked in #412\n"
     result = parse_suppressions(source)
     assert result == {1: frozenset({"DOC001"})}
 
 
 def test_multiple_lines() -> None:
-    source = "def foo(): pass  # noqa: DOC001\ndef bar(): pass\ndef baz(): pass  # noqa: DOC007\n"
+    source = "def foo(): pass  # nodo: DOC001\ndef bar(): pass\ndef baz(): pass  # nodo: DOC007\n"
     result = parse_suppressions(source)
     assert result == {1: frozenset({"DOC001"}), 3: frozenset({"DOC007"})}
 
 
-def test_noqa_spacing_variants() -> None:
-    assert parse_suppressions("x  # noqa:DOC001\n") == {1: frozenset({"DOC001"})}
-    assert parse_suppressions("x  #noqa: DOC001\n") == {1: frozenset({"DOC001"})}
+def test_marker_spacing_variants() -> None:
+    assert parse_suppressions("x  # nodo:DOC001\n") == {1: frozenset({"DOC001"})}
+    assert parse_suppressions("x  #nodo: DOC001\n") == {1: frozenset({"DOC001"})}
 
 
 def test_line_numbers_are_one_based() -> None:
-    source = "\n\ndef foo(): pass  # noqa: DOC001\n"
+    source = "\n\ndef foo(): pass  # nodo: DOC001\n"
     result = parse_suppressions(source)
     assert 3 in result
+
+
+# ---------------------------------------------------------------------------
+# parse_suppressions — noqa backward-compat via markers=("noqa",)
+# ---------------------------------------------------------------------------
+
+
+def test_noqa_marker_compat() -> None:
+    result = parse_suppressions("def foo(): pass  # noqa: DOC001\n", markers=("noqa",))
+    assert result == {1: frozenset({"DOC001"})}
+
+
+def test_noqa_not_matched_by_default_nodo_marker() -> None:
+    assert parse_suppressions("def foo(): pass  # noqa: DOC001\n") == {}
+
+
+def test_nodo_not_matched_by_noqa_marker() -> None:
+    assert parse_suppressions("def foo(): pass  # nodo: DOC001\n", markers=("noqa",)) == {}
+
+
+# ---------------------------------------------------------------------------
+# parse_suppressions — multi-marker (nodo + noqa)
+# ---------------------------------------------------------------------------
+
+
+def test_multi_marker_matches_both() -> None:
+    markers = ("nodo", "noqa")
+    assert parse_suppressions("x  # nodo: DOC001\n", markers=markers) == {1: frozenset({"DOC001"})}
+    assert parse_suppressions("x  # noqa: DOC001\n", markers=markers) == {1: frozenset({"DOC001"})}
+
+
+def test_multi_marker_bare_both() -> None:
+    markers = ("nodo", "noqa")
+    assert parse_suppressions("x  # nodo\n", markers=markers) == {1: frozenset()}
+    assert parse_suppressions("x  # noqa\n", markers=markers) == {1: frozenset()}
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +125,7 @@ def test_is_suppressed_different_code_not_suppressed(tmp_path: Path) -> None:
     assert not is_suppressed(r, suppressions)
 
 
-def test_is_suppressed_bare_noqa_suppresses_all(tmp_path: Path) -> None:
+def test_is_suppressed_bare_suppresses_all(tmp_path: Path) -> None:
     f = tmp_path / "t.py"
     r = _result("DOC007", f, line=5)
     suppressions = {5: frozenset()}
@@ -150,15 +185,21 @@ def test_apply_suppressions_different_files(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Integration: noqa in actual source file
+# Integration: suppression in actual source file
 # ---------------------------------------------------------------------------
 
 
-def test_noqa_in_source_suppresses_result(tmp_path: Path) -> None:
-    from docpact.suppress import parse_suppressions
+def test_nodo_in_source_suppresses_result(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:  # nodo: DOC001\n    pass\n")
+    sups = parse_suppressions(src.read_text())
+    r = _result("DOC001", src, line=1)
+    assert is_suppressed(r, sups)
 
+
+def test_noqa_in_source_suppresses_result_when_configured(tmp_path: Path) -> None:
     src = tmp_path / "t.py"
     src.write_text("def foo(x: int) -> None:  # noqa: DOC001\n    pass\n")
-    sups = parse_suppressions(src.read_text())
+    sups = parse_suppressions(src.read_text(), markers=("noqa",))
     r = _result("DOC001", src, line=1)
     assert is_suppressed(r, sups)

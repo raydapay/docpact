@@ -40,6 +40,7 @@ class Config:
     per_file_ignores: dict[str, tuple[str, ...]] = field(default_factory=dict)
     tier_overrides: dict[str, int] = field(default_factory=dict)
     rule_severities: dict[str, Severity] = field(default_factory=dict)
+    suppress_comment: tuple[str, ...] = ("nodo",)
 
 
 _SEVERITY_MAP: dict[str, Severity] = {
@@ -131,6 +132,12 @@ def _parse_section(raw: dict[str, object]) -> Config:
                 raise ConfigError(f"tiers.{pattern!r}: tier must be an integer 1-4")
             tier_overrides[pattern] = tier_val
 
+    suppress_comment: tuple[str, ...] = ("nodo",)
+    if "suppress_comment" in raw:
+        suppress_comment = _parse_string_list(raw["suppress_comment"], "suppress_comment")
+        if not suppress_comment:
+            raise ConfigError("suppress_comment: must contain at least one marker string")
+
     return Config(
         schema=schema,
         docstring_format=docstring_format,
@@ -141,6 +148,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
         rule_severities=rule_severities,
         per_file_ignores=per_file_ignores,
         tier_overrides=tier_overrides,
+        suppress_comment=suppress_comment,
     )
 
 

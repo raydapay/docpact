@@ -239,13 +239,13 @@ def test_cli_json_output(tmp_path: Path) -> None:
     assert any(d["code"] == "DOC001" for d in doc["diagnostics"])
 
 
-def test_cli_noqa_suppresses_diagnostic(tmp_path: Path) -> None:
+def test_cli_nodo_suppresses_diagnostic(tmp_path: Path) -> None:
     from click.testing import CliRunner
 
     from docpact.cli import main
 
     src = tmp_path / "t.py"
-    src.write_text("def foo(x: int) -> None:  # noqa: DOC001\n    pass\n")
+    src.write_text("def foo(x: int) -> None:  # nodo: DOC001\n    pass\n")
 
     runner = CliRunner()
     with runner.isolated_filesystem() as td:
@@ -260,14 +260,14 @@ def test_cli_noqa_suppresses_diagnostic(tmp_path: Path) -> None:
     assert result.exit_code == 0
 
 
-def test_cli_noqa_with_wrong_code_does_not_suppress(tmp_path: Path) -> None:
+def test_cli_nodo_with_wrong_code_does_not_suppress(tmp_path: Path) -> None:
     from click.testing import CliRunner
 
     from docpact.cli import main
 
     src = tmp_path / "t.py"
 
-    src.write_text("def foo(x: int) -> None:  # noqa: DOC007\n    pass\n")
+    src.write_text("def foo(x: int) -> None:  # nodo: DOC007\n    pass\n")
 
     runner = CliRunner()
     with runner.isolated_filesystem() as td:
