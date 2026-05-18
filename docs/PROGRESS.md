@@ -10,13 +10,37 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. Codebase is self-hosting. Several v0.2 items already shipped.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099,
-MCP001, FIX001–FIX002. 504 tests, 96% coverage.
+MCP001, FIX001–FIX002, TY001–TY002. 575 tests, 96% coverage.
 
 Active: maintenance, v0.2 delivery. See "Recent changes" and "v0.2 scope" below.
 
 ---
 
 ## Recent changes (post-v0.1)
+
+### TY001, TY002 — type/docstring contradiction rules — 2026-05-18
+
+New `TY` namespace for cross-validation between type annotations and docstring content.
+
+- **TY001** (ERROR): explicit `-> None` annotation but Returns section has substantive
+  content. The annotation promises nothing; the docstring contradicts it.
+  Skips canonical-empty bodies ("None.", "None", "N/A") — those express absence
+  explicitly and are structurally acceptable.
+- **TY002** (WARNING): non-None return annotation but Returns section body is `"None."`
+  (canonical empty). DOC012 is satisfied by presence alone; TY002 catches the
+  coherence failure DOC012 misses.
+- Both rules skip unannotated functions (contradiction is unconfirmable).
+- `TY` namespace added to docpact's own `select` in `pyproject.toml`.
+
+### SARIF output (`--format sarif`) — 2026-05-18
+
+- `format_sarif` added to `src/docpact/output/__init__.py`.
+- Produces SARIF 2.1.0: single run, `tool.driver` populated from live rule registry,
+  `results` array with `ruleId`, `level`, `message`, and `physicalLocation`.
+- Relative URIs with `uriBaseId = "%SRCROOT%"` when `cwd` provided; absolute
+  `file://` URIs otherwise. `originalUriBaseIds` set accordingly.
+- SARIF columns are 1-based; model stores 0-based — `column + 1` applied.
+- `--format` choice in CLI extended to `["text", "json", "sarif"]`.
 
 ### NumPy docstring parser — 2026-05-18
 
@@ -84,17 +108,16 @@ Commits: `db3ae18`, `4c5c8f1`
 - **DOC003** — class-level docstring enforcement.
 - **DOC050** — Pydantic field missing `Field(description=...)`.
 - **FIX002** — suppression without `-- reason`.
+- **SARIF output** — `--format sarif`.
+- **TY001, TY002** — type/docstring contradiction rules.
 
 ### Remaining
 
-- **SARIF output** — `--format sarif`. Only text and JSON currently. **Next up.**
-- **pytest plugin** — `docpact[pytest]` extra declared, `docpact.testing`
-  programmatic API exists; plugin is a thin layer on top.
+- **HEUR rules** — heuristic namespace. Cargo-cult docstring detection is the
+  primary candidate (e.g., `x: The x value.`). Deferred: threshold for "bad"
+  vs. "concise" needs a concrete spec before implementation.
 - **Sphinx/RST docstring parser** — infrastructure ready (`_sections_from_griffe`
-  helper exists). Add on demand when a real adopter with a Sphinx codebase requests
-  it; not scheduled.
-- **TY rules** — ty cross-validation namespace. Allocated, no rules.
-- **HEUR rules** — heuristic namespace. Allocated, no rules.
+  helper exists). Add on demand; not scheduled.
 - **Third-party rule plugin API** — rules are internal.
 - **Tier 4 automatic detection** — explicit config-only for now.
 - **Semantic mode** (`SEM` namespace) — LLM-based analysis. No code, no prompts,
@@ -103,6 +126,16 @@ Commits: `db3ae18`, `4c5c8f1`
   Executing docstring Examples sections has arbitrary side effects. No safe
   sandboxing strategy exists for a structural linter. The rule stub remains in
   the registry so the code is reserved; the check function is permanently empty.
+
+### Deferred with reasoning
+
+- **pytest plugin** — `docpact[pytest]` extra declared, `docpact.testing`
+  programmatic API exists.
+  **Why deferred:** In 2026, IDE UX is not the primary value driver for this kind
+  of tool. docpact is primarily a CI tool; failures surfaced by `docpact check src/`
+  land at the same point in the pipeline as pytest failures. The incremental value
+  of a pytest plugin is low unless the target user base explicitly needs IDE
+  inline-diagnostics or per-function contract tests. Revisit if adopters request it.
 
 ---
 

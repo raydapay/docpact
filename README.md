@@ -1,39 +1,133 @@
 # docpact
 
-A linter, validator, and formatter for Python docstrings, designed for the audiences that consume docstrings as machine-readable contracts: MCP clients, coding agents, and CI pipelines.
+A linter and validator for Python docstrings — built for the audiences that treat them as machine-readable contracts.
 
-## Status
+---
 
-**Pre-implementation.** v0.1 specification is complete. Implementation has not started.
+Python functions exposed as MCP tools, FastAPI routes, or called by coding agents publish their contracts through docstrings. Those docstrings are now read by machines making consequential decisions: which tool to invoke, which arguments to pass, whether a proposed change is safe. A stale or inconsistent docstring silently misdirects them.
 
-The current artifacts in this repository are:
+docpact validates that required sections are present for the function's exposure tier, that documented parameters match the signature, and that the type annotation and the prose don't contradict each other. It fails fast on drift and provides safe automated fixes for the unambiguous cases.
 
-- [`docs/spec/docpact-spec.md`](docs/spec/docpact-spec.md) — the full specification
-- [`docs/adr/`](docs/adr/) — architecture decision records documenting why specific choices were made
+```
+$ docpact check src/
+src/notify.py:12:0: DOC012 Tier 3 function missing required section: Constraints
+src/notify.py:12:0: DOC012 Tier 3 function missing required section: Stability
+src/payments.py:8:0: DOC007 Documented parameter not in signature: amout (did you mean: amount?)
+src/users.py:31:0: TY001 Return annotation is 'None' but Returns section documents a value
+Found 4 errors.
+```
 
-## What docpact does
+## Install
 
-Python functions exposed as MCP tools, FastAPI routes, or consumed by coding agents publish their contracts through docstrings. Those docstrings are now read by machines making consequential decisions: which tool to call, which arguments to pass, whether a proposed code modification is safe.
+```bash
+pip install docpact
+# or
+uv add docpact
+```
 
-docpact validates that what the docstring says is structurally consistent with what the code does, that required information is present for the audience that will consume it, and that conflicts between sources of metadata (decorator vs. docstring, type vs. prose) are surfaced rather than silently inconsistent.
+## Usage
 
-It runs in pre-commit hooks and CI, fails fast on drift, and provides safe automated fixes for the unambiguous cases.
+```bash
+docpact check src/                    # check all .py files under src/
+docpact check src/ --fix              # apply safe fixes in-place
+docpact check src/ --diff             # preview fixes as a unified diff
+docpact check src/ --format sarif     # SARIF 2.1.0 for GitHub Code Scanning
+docpact check src/ --format json      # machine-readable JSON
+docpact generate src/                 # insert stub docstrings for undocumented functions
+docpact list-rules                    # list all rules with severity and fixability
+```
+
+## What it checks
+
+| Namespace | Rules | What |
+|---|---|---|
+| `DOC` | DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099 | Structural completeness: missing docstrings, missing sections, parameter mismatch, Pydantic field descriptions, stale `[FILL]` markers |
+| `TY` | TY001–TY002 | Type/docstring coherence: annotation vs. prose contradictions |
+| `MCP` | MCP001 | MCP-specific conflicts: decorator `description=` vs. docstring `MCP:` section |
+| `FIX` | FIX001–FIX002 | Suppression hygiene: bare suppression comments, missing `-- reason` |
+
+Full rule documentation: [`docs/rules/`](docs/rules/).
+
+## Tier model
+
+docpact assigns each function a *tier* based on who consumes it and enforces the appropriate schema:
+
+| Tier | Who | Required sections |
+|---|---|---|
+| 1 | Internal | Summary |
+| 2 | Package-public API | Summary, Args (when params present), Returns (when non-None) |
+| 3 | MCP-exposed tools | Tier 2 + Raises, Constraints, Stability, MCP |
+| 4 | FastAPI routes via FastMCP | Same as Tier 3 |
+
+Tier assignment is automatic from decorators and file structure. Overrides are available in config.
+
+## Configuration
+
+```toml
+[tool.docpact]
+schema = "1"
+format = "google"                # or "numpy"
+select = ["DOC", "MCP", "FIX", "TY"]
+suppress_comment = ["nodo"]      # inline suppression marker
+
+[tool.docpact.per-file-ignores]
+"src/generated/*" = ["DOC"]
+```
+
+Inline suppression (on the `def` line):
+
+```python
+def build_internal_graph(  # nodo: DOC012 -- internal; tier override not yet wired
+    nodes: list[str],
+) -> Graph: ...
+```
+
+## CI integration
+
+**GitHub Actions with Code Scanning:**
+
+```yaml
+- name: docpact
+  run: docpact check src/ --format sarif --exit-zero > docpact.sarif
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: docpact.sarif
+```
+
+**pre-commit:**
+
+```yaml
+repos:
+  - repo: https://github.com/your-org/docpact
+    rev: v0.1.0
+    hooks:
+      - id: docpact
+```
 
 ## What docpact does NOT do
 
-- It does not replace ruff, ty, or any type checker. It validates the docstring layer specifically.
-- It does not verify behavioral correctness. It checks structural consistency. See spec §1.4.
-- It does not import the code under analysis. All checks are static.
-- It does not, in v0.1, perform LLM-based semantic analysis. That mode is designed in the spec but explicitly deferred. See spec §5.3 and §12.2.
+- Does not replace ruff, ty, or any type checker — it validates the docstring layer specifically.
+- Does not verify behavioral correctness — it checks structural consistency. See spec §1.4.
+- Does not import the code under analysis — all checks are purely static.
+- Does not perform LLM-based semantic analysis in v0.1 — that mode is designed in the spec but explicitly deferred.
+
+## Status
+
+v0.1 complete. Self-hosting: docpact checks its own source on every CI run.
+
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099, MCP001, FIX001–FIX002, TY001–TY002. 558 tests, 96% coverage.
 
 ## Documentation
 
 | Document | Purpose |
 |---|---|
-| [Specification](docs/spec/docpact-spec.md) | Full design specification. Source of truth for what docpact is. |
+| [Specification](docs/spec/docpact-spec.md) | Full design specification. Source of truth for what docpact is and why. |
+| [Rule docs](docs/rules/) | One page per rule: what it checks, examples, configuration. |
 | [ADR index](docs/adr/README.md) | Architecture decision records. Why each significant choice was made. |
-| [ADR-001](docs/adr/ADR-001-implementation-language.md) | Implementation language decision for v0.1 (Python + griffe). |
+| [Progress](docs/PROGRESS.md) | Milestone log and v0.2 scope. |
 
 ## License
 
-MIT (intended). LICENSE file to be added before first release.
+MIT. See [LICENSE](LICENSE).
