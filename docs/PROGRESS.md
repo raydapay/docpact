@@ -7,7 +7,7 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**Phase 8 complete. Phase 9 (testing API) is next.**
+**Phase 9 complete. Phase 10 (polish) is next.**
 
 ---
 
@@ -120,10 +120,20 @@ Commit: `a6da41f`
   registered rules with code, namespace, severity, fixability, summary.
 - 380 tests, 97% coverage.
 
-### Phase 9 — Testing API
-Status: **not started**
+### Phase 9 — Testing API ✓
+Commit: `60e40f5`
 
-- `docpact.testing` public functions.
+- `src/docpact/testing.py` — five public functions per spec §14.1:
+  `assert_tier`, `assert_section_present`, `assert_params_match_signature`,
+  `assert_mcp_schema_from_docstring`, `get_parsed_docstring`.
+- Function lookup uses `__code__.co_filename` + `co_firstlineno` so the
+  analyzed code is never imported — `inspect.unwrap` follows `__wrapped__`
+  chains for decorated callables.
+- `assert_mcp_schema_from_docstring` returns
+  `{"description": str, "parameters": dict[str, str]}`; prefers MCP section
+  body, falls back to summary.
+- Tests: 27 tests in `tests/test_testing.py`; removed `testing.py` from
+  coverage omit list (96% overall, 85% on testing module).
 
 ### Phase 10 — Polish
 Status: **not started**
