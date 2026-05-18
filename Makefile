@@ -1,4 +1,4 @@
-.PHONY: help install format format-check lint lint-check typecheck test coverage verify docs docs-check dogfood
+.PHONY: help install format format-check lint lint-check typecheck test coverage verify docs docs-check dogfood bench bench-update
 
 # Default target
 help:
@@ -15,6 +15,8 @@ help:
 	@echo "  make docs           Generate docs/rules/*.md from the rule registry"
 	@echo "  make docs-check     Verify docs/rules/*.md matches registry (CI gate)"
 	@echo "  make dogfood        Run docpact on its own source (self-check)"
+	@echo "  make bench          Run throughput benchmark and compare against baseline"
+	@echo "  make bench-update   Run benchmark and save result as new baseline"
 
 install:
 	uv sync
@@ -50,6 +52,12 @@ docs-check:
 
 dogfood:
 	uv run docpact check src/
+
+bench:
+	uv run python scripts/bench.py
+
+bench-update:
+	uv run python scripts/bench.py --update
 
 verify:
 	@echo "Starting full verification pipeline..."
