@@ -29,6 +29,7 @@ import docpact.rules.doc.doc051_annotated_constraint  # noqa: F401, E402
 import docpact.rules.doc.doc098_doctest_exception  # noqa: F401, E402
 import docpact.rules.doc.doc099_fill_marker  # noqa: F401, E402
 import docpact.rules.fix.fix001_bare_noqa  # noqa: F401, E402
+import docpact.rules.fix.fix002_no_reason  # noqa: F401, E402
 import docpact.rules.mcp.mcp001_decorator_docstring_conflict  # noqa: F401, E402
 from docpact.rules._registry import all_rules  # noqa: E402
 
