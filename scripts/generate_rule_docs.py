@@ -93,12 +93,18 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     rules = all_rules()
+    wrote = skipped = 0
     for code, (meta, _) in sorted(rules.items()):
         page_path = out_dir / f"{code}.md"
+        if page_path.exists() and "<!-- TODO:" not in page_path.read_text():
+            print(f"  skip  {page_path.relative_to(Path(__file__).parent.parent)} (hand-crafted)")
+            skipped += 1
+            continue
         page_path.write_text(_page(code, meta))
         print(f"  wrote {page_path.relative_to(Path(__file__).parent.parent)}")
+        wrote += 1
 
-    print(f"\nGenerated {len(rules)} rule pages in {out_dir.relative_to(Path(__file__).parent.parent)}/")
+    print(f"\n{wrote} stubs written, {skipped} hand-crafted files preserved in {out_dir.relative_to(Path(__file__).parent.parent)}/")
 
 
 if __name__ == "__main__":
