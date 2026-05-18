@@ -1,0 +1,14 @@
+name: Inbox — quick thought
+description: A short note or remark to revisit later. One field, no triage.
+title: "[inbox] "
+labels:
+  - inbox
+body:
+  - type: textarea
+    id: thought
+    attributes:
+      label: Thought
+      description: What's on your mind. Don't worry about formatting — we'll triage in the next session.
+      placeholder: e.g. "revisit X — feels wrong because Y"
+    validations:
+      required: true

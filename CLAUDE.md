@@ -339,6 +339,42 @@ If the spec needs to change, do not edit `docs/spec/docpact-spec.md` directly. O
 
 ---
 
+## Inbox — unsorted user notes
+
+The user captures quick thoughts (from phone or mid-session) as GitHub
+issues with the **`inbox`** label. These are pre-triage: a one-line
+remark to revisit, not a bug report and not a phase.
+
+**Lifecycle:** open → resolved by either rejection (closed with a
+comment explaining why) or promotion to the backlog / a future phase
+(closed with a comment linking the relevant work + commit).
+Closed issues stay searchable; they are the historical record of
+"things considered but not done."
+
+**Use the `gh` CLI for all of it — never the GitHub web UI:**
+
+| Action | Command |
+|---|---|
+| List open inbox items | `gh issue list --label inbox --state open` |
+| Capture mid-session (when the user says "inbox: …" or "remember: …") | `gh issue create --label inbox --title "[inbox] <first 60 chars>" --body "<full text>"` |
+| Reject | `gh issue close <#> --comment "rejected: <reason>"` |
+| Promote to future work | `gh issue close <#> --comment "promoted to <phase/ADR/issue> — see <commit>"` |
+
+**When to check the inbox:** on demand only. Do **not** auto-list at
+session start — it's noise. Check when Ray asks ("what's in the inbox?",
+"any open notes?") or when starting unstructured work where inbox items
+might be relevant.
+
+**Capture phrasing:** when Ray says *"inbox: X"*, *"remember: X"*, or
+*"note for later: X"* mid-session, create the issue immediately and
+acknowledge in one sentence (`Captured as #N. Back to <current task>.`)
+without breaking flow. Don't ask for confirmation.
+
+The issue template at `.github/ISSUE_TEMPLATE/inbox.yml` makes phone
+capture friction-minimal — one field, label preset.
+
+---
+
 ## When stuck
 
 If you genuinely cannot proceed:
