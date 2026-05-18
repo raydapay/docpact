@@ -6,10 +6,14 @@ files, pure namespace packages, and `__init__.py` files that only re-export
 symbols technically satisfy PEP 257 with no docstring, but for agent-facing
 code a module docstring is the fastest way to signal intent and scope.
 
-Disable for pure namespace packages or generated modules via per-file-ignores:
+``__init__.py`` files are excluded by default — they frequently serve as
+pure namespace packages or re-export surfaces where a module docstring adds
+little value. All other ``.py`` files are checked. To suppress DOC002 for
+additional files (generated code, stubs, migration scripts), use
+per-file-ignores:
 
     [tool.docpact.per-file-ignores]
-    "src/mypkg/__init__.py" = ["DOC002"]
+    "src/generated/**/*.py" = ["DOC002"]
 
 This is a file-level rule, not a function-level rule. The CLI's source scan
 calls check_module_docstring directly; the registered check function is a
@@ -64,9 +68,12 @@ def check_module_docstring(
 
     Returns:
         A single RuleResult at line 1 if the module has no docstring; empty
-        list otherwise. Empty files and files that fail to parse are silently
-        skipped — a parse error will surface via other means.
+        list otherwise. __init__.py files, empty files, and files that fail
+        to parse are silently skipped.
     """
+    if file_path.name == "__init__.py":
+        return []
+
     try:
         tree = ast.parse(source)
     except SyntaxError:

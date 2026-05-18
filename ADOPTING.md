@@ -78,7 +78,7 @@ repos:
 | Rule | What it catches | Default severity |
 |------|----------------|-----------------|
 | DOC001 | Function missing a docstring entirely | ERROR |
-| DOC002 | Module missing a module-level docstring | WARNING |
+| DOC002 | Module missing a module-level docstring (`__init__.py` excluded by default) | WARNING |
 | DOC007 | Args section doesn't match the function signature | ERROR |
 | DOC012 | Required section absent for the function's tier | ERROR |
 | DOC013 | Empty section not in canonical form | WARNING |
@@ -127,9 +127,11 @@ Tier 4 allows opt-in to Tier 3 strictness without MCP decorators:
 [tool.docpact.per-file-ignores]
 # Generated protobuf stubs — no point documenting these.
 "src/proto/**/*.py" = ["DOC001", "DOC002"]
-# Namespace-only __init__.py files.
-"src/mypkg/__init__.py" = ["DOC002"]
 ```
+
+Note: `__init__.py` files are already excluded by DOC002's default behaviour.
+Additional exclusions (generated code, stubs, migration scripts) use
+`per-file-ignores` as shown above.
 
 ### Silence specific checks globally
 

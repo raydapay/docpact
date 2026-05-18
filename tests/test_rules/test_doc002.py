@@ -40,6 +40,20 @@ def test_empty_file_no_error(tmp_path: Path) -> None:
     assert _run("", tmp_path / "m.py") == []
 
 
+def test_init_file_skipped_by_default(tmp_path: Path) -> None:
+    # __init__.py files are excluded by default — they often contain nothing
+    # but re-exports where a module docstring adds no value.
+    source = "from .foo import bar\n"
+    assert _run(source, tmp_path / "__init__.py") == []
+
+
+def test_init_file_with_docstring_still_skipped(tmp_path: Path) -> None:
+    # Even an __init__.py that does have a docstring should return [] (no false
+    # negative possible since we skip early).
+    source = '"""Package exports."""\nfrom .foo import bar\n'
+    assert _run(source, tmp_path / "__init__.py") == []
+
+
 def test_syntax_error_no_error(tmp_path: Path) -> None:
     # Files that fail to parse don't produce DOC002 — a SyntaxError is a
     # different problem, not a missing docstring.
