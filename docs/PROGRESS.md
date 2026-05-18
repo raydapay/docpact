@@ -7,7 +7,7 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**Phase 9 complete. Phase 10 (polish) is next.**
+**Phase 10 complete. v0.1 implementation is done.**
 
 ---
 
@@ -135,9 +135,16 @@ Commit: `60e40f5`
 - Tests: 27 tests in `tests/test_testing.py`; removed `testing.py` from
   coverage omit list (96% overall, 85% on testing module).
 
-### Phase 10 — Polish
-Status: **not started**
+### Phase 10 — Polish ✓
+Commit: `fbca22a`
 
-- Pre-commit hook configuration.
-- Documentation page generation per rule code.
-- Self-application (dogfooding) on docpact's own source.
+- `.pre-commit-hooks.yaml` — standard pre-commit hook definition; exposes
+  `id: docpact` for downstream consumers.
+- `scripts/generate_rule_docs.py` — generates `docs/rules/<code>.md` per
+  registered rule from live registry metadata. `make docs` runs it.
+- Dogfooding: `uv run docpact check src/` exits 0. Fixed 50 violations across
+  20 source files: summary docstrings for helper functions, Args + Returns for
+  all rule `check()` functions, `# noqa: DOC012` for CLI command functions
+  (args documented by click), `# noqa: DOC099` for functions that describe
+  `[FILL]` markers in explanatory prose.
+- `make dogfood` target added for ongoing self-check.
