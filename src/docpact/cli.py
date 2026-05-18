@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 import click
 
 import docpact.rules.doc.doc001_missing_docstring
+import docpact.rules.doc.doc002_module_docstring
 import docpact.rules.doc.doc007_param_mismatch
 import docpact.rules.doc.doc012_missing_section
 import docpact.rules.doc.doc013_noncanonical_empty
@@ -35,6 +36,7 @@ from docpact.output import format_json, format_summary, format_text
 from docpact.parser.docstring import GoogleParser
 from docpact.parser.source import extract_functions
 from docpact.rules._registry import RuleConfig, all_rules
+from docpact.rules.doc.doc002_module_docstring import check_module_docstring
 from docpact.rules.fix.fix001_bare_noqa import check_bare_noqa
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
@@ -74,7 +76,7 @@ def _run_checks(
         suppressions[file_path] = file_suppressions
         extra_ignores = file_ignores_for(file_path, config.per_file_ignores)
 
-        # FIX001 is a line-level rule; run it per-file against the suppression map.
+        # File-level rules: run once per file before function-level rules.
         if "FIX001" in rules:
             fix001_meta, _ = rules["FIX001"]
             if rule_is_enabled("FIX001", "FIX", config.select, config.ignore) and rule_is_enabled(
@@ -84,14 +86,23 @@ def _run_checks(
                 cfg = RuleConfig(severity=severity, options={})
                 results.extend(check_bare_noqa(source_text, file_suppressions, file_path, cfg))
 
+        if "DOC002" in rules:
+            doc002_meta, _ = rules["DOC002"]
+            if rule_is_enabled("DOC002", "DOC", config.select, config.ignore) and rule_is_enabled(
+                "DOC002", "DOC", ("DOC", "MCP", "FIX"), extra_ignores
+            ):
+                severity = config.rule_severities.get("DOC002", doc002_meta.default_severity)
+                cfg = RuleConfig(severity=severity, options={})
+                results.extend(check_module_docstring(source_text, file_path, cfg))
+
         functions = extract_functions(file_path)
         for func in functions:
             doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
             tier = assign_tier(func, config.tier_overrides)
             config_options: dict[str, object] = {"tier": tier}
             for meta, rule_fn in rules.values():
-                if meta.code == "FIX001":
-                    continue  # handled above as a file-level rule
+                if meta.code in {"FIX001", "DOC002"}:
+                    continue  # handled above as file-level rules
                 if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
                     continue
                 if not rule_is_enabled(

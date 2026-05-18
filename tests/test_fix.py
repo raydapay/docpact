@@ -305,7 +305,7 @@ def test_cli_fix_applies_doc001_stub(tmp_path: Path) -> None:
         (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
         result = runner.invoke(
             main,
-            ["check", "--fix", "--ignore", "DOC099", str(src)],
+            ["check", "--fix", "--ignore", "DOC099", "--ignore", "DOC002", str(src)],
             catch_exceptions=False,
         )
 

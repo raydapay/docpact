@@ -126,6 +126,74 @@ The floor is 3.12; do not avoid modern syntax out of caution.
 
 ---
 
+## Structural enforcement vs. semantic content
+
+docpact enforces **structure**, not **meaning**. A docstring that passes every
+check is not necessarily useful. This distinction matters when generating or
+reviewing docstrings.
+
+### What docpact guarantees
+
+- Args section exists and matches the signature (DOC007).
+- Required sections are present for the function's tier (DOC012).
+- No stale stub markers remain (DOC099).
+- Module has a docstring (DOC002).
+- No phantom parameters, no silent decorator conflicts.
+
+### What docpact does NOT guarantee
+
+Content quality. This passes all checks:
+
+```python
+def process(user_id: str, flags: int) -> dict:
+    """Process.
+
+    Args:
+        user_id: The user id.
+        flags: The flags.
+
+    Returns:
+        The result.
+    """
+```
+
+This is cargo-cult compliance. Every field restates the parameter name.
+A coding agent reading this learns nothing beyond what the type annotations
+already provide.
+
+Useful docstrings look like this:
+
+```python
+def process(user_id: str, flags: int) -> dict:
+    """Apply pending transforms to a user account.
+
+    Args:
+        user_id: UUID of the user record. Must exist in the user table;
+            raises ValueError if not found.
+        flags: Bitmask of FeatureFlag values. Unknown bits are silently
+            ignored for forward compatibility.
+
+    Returns:
+        Snapshot of the account state after all transforms applied,
+        keyed by field name. Callers can diff against the prior snapshot
+        to determine what changed.
+    """
+```
+
+### The agent's responsibility
+
+docpact builds the scaffold. The agent fills it with signal. In a
+docpact-enabled repo, trust that the structure is correct — then spend
+the effort on content that could not be inferred from the signature alone:
+preconditions, side effects, invariants, what the return value actually
+means, what causes exceptions.
+
+If you generate a docstring with docpact's fix (`--fix`) and it contains
+`[FILL]` markers, that is the trigger to write real content. Do not replace
+`x: [FILL]` with `x: The x value.` — that is noise, not signal.
+
+---
+
 ## Working with Ray
 
 - **Steelman counterarguments before agreeing.** Voice concerns first. Agree plainly

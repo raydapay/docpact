@@ -1,13 +1,14 @@
 """DOC098 — Example in docstring raised an exception when run as a doctest.
 
-Fires when --doctest mode is enabled and a docstring Examples section
-contains code that raises an exception instead of producing the expected
-output. The [FILL] stub marker also triggers this via DOC099 (output
-mismatch with any expected output).
+Permanently out of scope. Executing docstring Examples sections as doctests
+has arbitrary side effects — network calls, file writes, database mutations,
+process spawns. There is no safe sandboxing strategy for a structural linter
+that does not require reimplementing a full test harness. The code is reserved
+so the error code cannot be reused; the check function is permanently empty.
 
-Deferred: requires --doctest CLI flag and a live doctest runner. The
-current structural-only mode does not execute any code. Implement when
-doctest execution is added to the check command.
+If you need doctest execution, run Python's built-in doctest module directly:
+
+    python -m doctest your_module.py
 """
 
 from __future__ import annotations
@@ -37,5 +38,5 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check doctest examples — deferred until --doctest mode is implemented."""
-    return []  # requires --doctest flag and live code execution
+    """DOC098 is permanently out of scope. See module docstring."""
+    return []

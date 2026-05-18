@@ -15,6 +15,16 @@ Active: maintenance, v0.2 planning. See "Recent changes" and "v0.2 scope" below.
 
 ## Recent changes (post-v0.1)
 
+### DOC002 — module-level docstring enforcement — 2026-05-18
+
+- `DOC002` fires at WARNING severity when a Python file has no module-level docstring.
+- Wired as a file-level rule (same pattern as FIX001 — `check_module_docstring` called
+  directly from `_run_checks`, not through the function-level loop).
+- Empty files and files with syntax errors are silently skipped.
+- Default severity: WARNING (weaker than DOC001's ERROR; module docstrings are more
+  often legitimately absent in namespace packages and generated files).
+- Disable for specific files via `[tool.docpact.per-file-ignores]`.
+
 ### suppress_comment / # nodo — 2026-05-18
 
 Commits: `db3ae18`, `4c5c8f1`
@@ -51,8 +61,13 @@ Items explicitly deferred from v0.1 (spec §5.3 and §5.4):
 - **Tier 4 automatic detection** — explicit config-only in v0.1.
 - **Semantic mode** (`SEM` namespace) — LLM-based analysis. No code, no prompts,
   no API client. Entire subsystem absent from v0.1.
-- **DOC050** (Pydantic field missing description) and **DOC098** (doctest exception)
-  — registered stubs; need class-level analysis and `--doctest` flag respectively.
+- **DOC050** (Pydantic field missing description) — registered stub; needs class-level
+  analysis to associate `Field(...)` calls with the enclosing model.
+- **DOC098** (doctest exception) — **explicitly out of scope, not merely deferred.**
+  Executing docstring Examples sections has arbitrary side effects. There is no safe
+  sandboxing strategy that does not require reimplementing a full test harness — out
+  of scope for a structural linter. The rule stub remains in the registry so the code
+  is reserved; the check function is permanently empty.
 
 ---
 
