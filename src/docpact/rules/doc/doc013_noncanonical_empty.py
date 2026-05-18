@@ -39,7 +39,16 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check that empty sections use the canonical 'None.' form."""
+    """Check that empty sections use the canonical 'None.' form.
+
+    Args:
+        func: The function being checked.
+        doc: Parsed docstring, or None if absent.
+        config: Rule configuration including severity and tier.
+
+    Returns:
+        List of DOC013 diagnostics for each non-canonical empty section.
+    """
     if doc is None:
         return []
 

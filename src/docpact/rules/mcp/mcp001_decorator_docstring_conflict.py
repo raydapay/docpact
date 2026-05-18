@@ -54,7 +54,16 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Detect simultaneous decorator and docstring MCP metadata."""
+    """Detect simultaneous decorator and docstring MCP metadata.
+
+    Args:
+        func: The function being checked.
+        doc: Parsed docstring, or None if absent.
+        config: Rule configuration including severity and tier.
+
+    Returns:
+        List with one MCP001 diagnostic when both sources are present.
+    """
     if doc is None:
         return []
 

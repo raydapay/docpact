@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 
 
 def _collect_py_files(paths: tuple[str, ...], config: Config) -> list[Path]:
+    """Expand path arguments to a sorted list of .py files, honouring exclude patterns."""
     result: list[Path] = []
     for p in paths:
         path = Path(p)
@@ -61,6 +62,7 @@ def _run_checks(
     py_files: list[Path],
     config: Config,
 ) -> tuple[list[RuleResult], dict[Path, dict[int, frozenset[str]]]]:
+    """Run all enabled rules over the given files and return results with suppression maps."""
     parser = GoogleParser()
     rules = all_rules()
     results: list[RuleResult] = []

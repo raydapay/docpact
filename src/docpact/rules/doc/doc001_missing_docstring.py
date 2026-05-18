@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 def _stub_docstring(func: FunctionInfo, tier: int) -> str:
-    """Build a [FILL]-stub docstring text for insertion at def_end_offset."""
+    """Build a stub docstring text containing FILL markers for insertion at def_end_offset."""
     indent = " " * (func.column + 4)
     inner = " " * (func.column + 8)
     summary = "[FILL: single-sentence summary in imperative mood]"
@@ -72,7 +72,16 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check whether a required docstring is present."""
+    """Check whether a required docstring is present.
+
+    Args:
+        func: The function being checked.
+        doc: Parsed docstring, or None if absent.
+        config: Rule configuration including severity and tier.
+
+    Returns:
+        List with one DOC001 diagnostic when the docstring is absent.
+    """
     if doc is not None:
         return []
 

@@ -37,5 +37,14 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check doctest examples — deferred until --doctest mode is implemented."""
+    """Check doctest examples — deferred until --doctest mode is implemented.
+
+    Args:
+        func: The function being checked.
+        doc: Parsed docstring, or None if absent.
+        config: Rule configuration including severity and tier.
+
+    Returns:
+        Empty list; implementation deferred until --doctest flag is added.
+    """
     return []  # requires --doctest flag and live code execution

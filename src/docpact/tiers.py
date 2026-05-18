@@ -34,6 +34,7 @@ def _is_dunder(name: str) -> bool:
 
 
 def _class_is_private(class_name: str) -> bool:
+    """Return True if the class name begins with an underscore."""
     return class_name.startswith("_")
 
 

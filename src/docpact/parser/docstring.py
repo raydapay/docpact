@@ -78,7 +78,11 @@ class DocstringParser(Protocol):
         ...
 
     def format_name(self) -> str:
-        """Return the format identifier ('google', 'numpy', 'sphinx')."""
+        """Return the format identifier ('google', 'numpy', 'sphinx').
+
+        Returns:
+            Format name string, e.g. 'google'.
+        """
         ...
 
 
@@ -181,5 +185,9 @@ class GoogleParser:
         )
 
     def format_name(self) -> str:
-        """Return the format identifier for this parser."""
+        """Return the format identifier for this parser.
+
+        Returns:
+            Always 'google' for this implementation.
+        """
         return "google"

@@ -33,6 +33,11 @@ class ConflictError:
     second: Fix
 
     def __str__(self) -> str:
+        """Format as a human-readable conflict description.
+
+        Returns:
+            String describing the file path and conflicting byte ranges.
+        """
         return (
             f"{self.file_path}: conflicting fixes at "
             f"[{self.first.start_offset}, {self.first.end_offset}) and "
@@ -73,6 +78,7 @@ def _collect_fixes(
 
 
 def _group_by_file(fixes: list[Fix]) -> dict[Path, list[Fix]]:
+    """Group a flat list of fixes into a dict keyed by file path."""
     groups: dict[Path, list[Fix]] = {}
     for fix in fixes:
         groups.setdefault(fix.file_path, []).append(fix)

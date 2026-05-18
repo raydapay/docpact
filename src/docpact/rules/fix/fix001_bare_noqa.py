@@ -43,7 +43,16 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """FIX001 is line-level; see check_bare_noqa for the actual implementation."""
+    """FIX001 is line-level; see check_bare_noqa for the actual implementation.
+
+    Args:
+        func: The function being checked (unused; FIX001 is file-level).
+        doc: Parsed docstring (unused; FIX001 is file-level).
+        config: Rule configuration (unused; FIX001 is file-level).
+
+    Returns:
+        Always empty; the real checks run via check_bare_noqa.
+    """
     return []
 
 

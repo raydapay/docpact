@@ -39,10 +39,12 @@ _MCP_DECORATORS = frozenset(
 
 
 def _has_mcp_description(func: FunctionInfo) -> bool:
+    """Return True if any MCP decorator on func has a description= keyword argument."""
     return any(d.name in _MCP_DECORATORS and "description" in d.arguments for d in func.decorators)
 
 
 def _has_non_none_return(func: FunctionInfo) -> bool:
+    """Return True if the function's return annotation is present and not None."""
     ra = func.return_annotation
     return bool(ra and ra.strip() not in ("None", ""))
 
@@ -62,7 +64,16 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check that all required sections are present for the function's tier."""
+    """Check that all required sections are present for the function's tier.
+
+    Args:
+        func: The function being checked.
+        doc: Parsed docstring, or None if absent.
+        config: Rule configuration including severity and tier.
+
+    Returns:
+        List of DOC012 diagnostics for each missing required section.
+    """
     if doc is None:
         return []
 
@@ -74,6 +85,7 @@ def check(
     loc = SourceLocation(file_path=func.file_path, line=func.line, column=func.column)
 
     def _missing(section: str) -> None:
+        """Append a DOC012 diagnostic for the named section."""
         results.append(
             RuleResult(
                 code="DOC012",

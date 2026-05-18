@@ -133,6 +133,7 @@ class _FunctionVisitor(ast.NodeVisitor):
         source_bytes: bytes,
         line_offsets: list[int],
     ) -> None:
+        """Set up the visitor with the source file and its precomputed line-offset table."""
         self.source_path = source_path
         self.source_bytes = source_bytes
         self.line_offsets = line_offsets
@@ -152,23 +153,27 @@ class _FunctionVisitor(ast.NodeVisitor):
         return None
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Push the class name onto the scope stack, visit body, then pop."""
         self._scope_stack.append(node.name)
         self.generic_visit(node)
         self._scope_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Collect the function, then visit its body with None on the scope stack."""
         self._collect(node)
         self._scope_stack.append(None)
         self.generic_visit(node)
         self._scope_stack.pop()
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Collect the async function, then visit its body with None on the scope stack."""
         self._collect(node)
         self._scope_stack.append(None)
         self.generic_visit(node)
         self._scope_stack.pop()
 
     def _collect(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        """Extract a FunctionInfo from an AST function node and append it to self.functions."""
         containing_class = self._containing_class
         is_static = any(_decorator_name(d) == "staticmethod" for d in node.decorator_list)
         parameters = _extract_parameters(node, containing_class, is_static)

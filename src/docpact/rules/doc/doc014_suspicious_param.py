@@ -41,7 +41,16 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check for documented parameter names that are close matches to real parameters."""
+    """Check for documented parameter names that are close matches to real parameters.
+
+    Args:
+        func: The function being checked.
+        doc: Parsed docstring, or None if absent.
+        config: Rule configuration including severity and tier.
+
+    Returns:
+        List of DOC014 warnings for each likely typo found.
+    """
     if doc is None:
         return []
 

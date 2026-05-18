@@ -45,9 +45,24 @@ _RULES: dict[str, tuple[RuleMetadata, RuleFn]] = {}
 
 
 def register(metadata: RuleMetadata) -> Callable[[RuleFn], RuleFn]:
-    """Decorator to register a rule function."""
+    """Decorator that registers a rule function under the given metadata.
+
+    Args:
+        metadata: Static metadata for the rule (code, severity, fixability, etc.).
+
+    Returns:
+        Decorator that registers and returns the decorated function unchanged.
+    """
 
     def decorator(fn: RuleFn) -> RuleFn:
+        """Register fn under metadata.code and return fn unchanged.
+
+        Args:
+            fn: The rule function to register.
+
+        Returns:
+            The same function, unmodified.
+        """
         if metadata.code in _RULES:
             raise ValueError(f"Rule {metadata.code} is already registered")
         _RULES[metadata.code] = (metadata, fn)
@@ -57,5 +72,9 @@ def register(metadata: RuleMetadata) -> Callable[[RuleFn], RuleFn]:
 
 
 def all_rules() -> dict[str, tuple[RuleMetadata, RuleFn]]:
-    """Return all registered rules."""
+    """Return a snapshot of all registered rules keyed by rule code.
+
+    Returns:
+        Dict mapping code string to (RuleMetadata, RuleFn) pairs.
+    """
     return dict(_RULES)

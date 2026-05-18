@@ -52,6 +52,7 @@ _VALID_FORMATS = {"google"}
 
 
 def _parse_severity(value: object, key: str) -> Severity:
+    """Parse a severity value from config, raising ConfigError on invalid input."""
     if not isinstance(value, str):
         raise ConfigError(f"{key}: expected a string, got {type(value).__name__}")
     if value not in _SEVERITY_MAP:
@@ -62,6 +63,7 @@ def _parse_severity(value: object, key: str) -> Severity:
 
 
 def _parse_string_list(value: object, key: str) -> tuple[str, ...]:
+    """Parse a list-of-strings value from config, raising ConfigError on invalid input."""
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
         raise ConfigError(f"{key}: expected a list of strings")
     return tuple(str(v) for v in value)
@@ -143,6 +145,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
 
 
 def _load_toml(path: Path) -> dict[str, object]:
+    """Read and decode a TOML file, raising ConfigError on parse failure."""
     try:
         with open(path, "rb") as fh:
             return tomllib.load(fh)  # type: ignore[return-value]

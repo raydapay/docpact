@@ -1,0 +1,8 @@
+- id: docpact
+  name: docpact
+  description: Validate docstring contracts against function signatures and tier requirements.
+  language: python
+  entry: docpact check
+  types: [python]
+  args: []
+  additional_dependencies: []
