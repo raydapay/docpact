@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: ruff format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: ruff lint
+        run: uv run ruff check src/ tests/
+
+      - name: ty typecheck
+        run: uv run ty check src/
+
+      - name: pytest with coverage
+        run: |
+          uv run coverage run -m pytest
+          uv run coverage report -m
+
+      - name: docpact self-check
+        run: uv run docpact check src/

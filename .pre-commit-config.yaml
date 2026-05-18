@@ -1,0 +1,24 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        description: Enforce consistent code formatting.
+        language: system
+        entry: uv run ruff format --check
+        types: [python]
+
+      - id: ruff-lint
+        name: ruff lint
+        description: Lint with ruff (no auto-fix on commit).
+        language: system
+        entry: uv run ruff check
+        types: [python]
+
+      - id: docpact
+        name: docpact
+        description: Validate docstring contracts on library source.
+        language: system
+        entry: uv run docpact check src/
+        pass_filenames: false
+        types: [python]

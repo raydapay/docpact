@@ -143,7 +143,7 @@ def main() -> None:
     metavar="CODE",
     help="Rule codes or prefixes to disable (overrides config).",
 )
-def check(
+def check(  # noqa: DOC012
     paths: tuple[str, ...],
     do_fix: bool,
     unsafe_fixes: bool,
@@ -221,7 +221,7 @@ def check(
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
 @click.option("--diff", is_flag=True, help="Show diff without writing files.")
-def generate(paths: tuple[str, ...], diff: bool) -> None:
+def generate(paths: tuple[str, ...], diff: bool) -> None:  # noqa: DOC012
     """Generate stub docstrings for undocumented functions."""
     config = load_config(Path.cwd())
     # Only DOC001 produces stubs; no other rule should drive generation.
@@ -332,7 +332,7 @@ def _wrap_items(items: list[str], indent: int, width: int = 78) -> str:
 
 @main.command(name="show-schema")
 @click.option("--tier", type=click.IntRange(1, 4), required=True)
-def show_schema(tier: int) -> None:
+def show_schema(tier: int) -> None:  # noqa: DOC012
     """Print the schema requirements for a given tier."""
     title, required, recommended, optional = _TIER_SCHEMA[tier]
     click.echo(f"\nTier {tier} — {title}\n")
@@ -352,7 +352,7 @@ def show_schema(tier: int) -> None:
     type=click.Choice(["text", "json"]),
     default="text",
 )
-def list_rules(output_format: str) -> None:
+def list_rules(output_format: str) -> None:  # noqa: DOC012
     """List all defined rules with their default severity."""
     import json as _json
 

@@ -52,5 +52,6 @@ verify:
 	  $(MAKE) lint && \
 	  $(MAKE) typecheck && \
 	  $(MAKE) coverage && \
+	  $(MAKE) dogfood && \
 	  echo "Verification successful.") || \
 	 (echo "Verification failed."; exit 1)
