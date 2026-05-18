@@ -1,8 +1,8 @@
 # docpact — Specification
 
-**Version:** 0.3.1-draft  
-**Status:** Pre-implementation specification  
-**Last revised:** 2026-05-17
+**Version:** 0.3.2  
+**Status:** Active — v0.1 complete, v0.2 in progress  
+**Last revised:** 2026-05-18
 
 ---
 
@@ -167,7 +167,6 @@ Rationale: structural mode delivers the core differentiator (deterministic enfor
 
 ### 5.2 v0.2 — near-term additions
 
-- pytest plugin
 - SARIF output format
 - NumPy docstring parser (via the parser abstraction in section 7.2)
 - Tier 4 heuristic detection (`HEUR` namespace expansion)
@@ -175,7 +174,13 @@ Rationale: structural mode delivers the core differentiator (deterministic enfor
 - ty integration (`TY` rule namespace)
 - Pydantic integration deepening
 
-### 5.3 Experimental — designed but deferred
+### 5.3 Deferred with reasoning
+
+**pytest plugin** — `docpact[pytest]` extra declared; `docpact.testing` programmatic API ships in v0.1 (§14.1).
+
+Deferred from v0.2: docpact is primarily a CI tool. In a CI-primary workflow, `docpact check src/` surfaces failures at exactly the same pipeline stage as `pytest`. The incremental value of a pytest plugin is low unless there is demand for IDE inline-diagnostics or per-function contract tests in the pytest output. The design is preserved in §14.2. Revisit if adopters request it.
+
+### 5.4 Experimental — designed but deferred
 
 **Semantic mode (`SEM` namespace)** is designed in this specification but deferred from v0.1 due to known operational concerns:
 
@@ -186,14 +191,14 @@ Rationale: structural mode delivers the core differentiator (deterministic enfor
 
 When semantic mode does ship, it ships as opt-in, off by default, and scoped to scheduled CI runs or pre-merge gates on MCP-exposed functions — not pre-commit, not blocking gate by default. Section 12.2 describes the intended design.
 
-### 5.4 Out of scope
+### 5.5 Out of scope
 
 - Sphinx-format parsing (deferred indefinitely; can be added if there is demand)
 - A standalone `format` command separate from `check --fix` (folded into `check`)
 - Third-party rule plugin API (the rule engine architecture permits it, but the API is not stabilized in v0.1; see section 7.5)
 - Cross-language docstring support
 
-### 5.5 Compatibility commitment
+### 5.6 Compatibility commitment
 
 Every feature shipped in any version is governed by the stability commitments in section 18. Anything in v0.1 — rule codes, configuration keys, output formats — is a stable surface from v0.1 forward.
 
@@ -730,7 +735,7 @@ def test_search_documents_mcp_description():
 
 `assert_mcp_schema_from_docstring` is named precisely: it returns what the docstring implies about the schema, not what FastMCP would actually emit. The two should match, but the test surface stays within `docpact` so it has no FastMCP version dependency.
 
-### 14.2 pytest plugin (v0.2)
+### 14.2 pytest plugin (deferred — see §5.3)
 
 Installing `docpact[pytest]` activates a pytest plugin that turns every function with a docstring into a collected test item:
 
