@@ -72,16 +72,7 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check whether a required docstring is present.
-
-    Args:
-        func: The function being checked.
-        doc: Parsed docstring, or None if absent.
-        config: Rule configuration including severity and tier.
-
-    Returns:
-        List with one DOC001 diagnostic when the docstring is absent.
-    """
+    """Check whether a required docstring is present."""
     if doc is not None:
         return []
 

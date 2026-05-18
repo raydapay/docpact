@@ -53,16 +53,7 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check that Constraints prose does not duplicate Annotated metadata.
-
-    Args:
-        func: The function being checked.
-        doc: Parsed docstring, or None if absent.
-        config: Rule configuration including severity and tier.
-
-    Returns:
-        List of DOC051 warnings for each numeric value duplicated from annotations.
-    """
+    """Check that Constraints prose does not duplicate Annotated metadata."""
     if doc is None:
         return []
 

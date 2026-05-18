@@ -128,3 +128,10 @@ suppress_comment = ["nodo"]
 # Tier 2 DOC001 noise would drown real signal. scripts/ is excluded for
 # the same reason (dev-only tooling, not the public library surface).
 exclude = ["tests/", "scripts/"]
+
+[tool.docpact.per-file-ignores]
+# Rule check() functions all share the same (FunctionInfo, ParsedDocstring|None, RuleConfig)
+# → list[RuleResult] signature. Args/Returns sections would be structurally identical
+# boilerplate across every rule with zero signal. The module docstring of each rule file
+# is where the substantive documentation lives; the check() summary line is sufficient.
+"src/docpact/rules/*/*.py" = ["DOC012"]

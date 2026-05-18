@@ -35,16 +35,7 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check that no stub placeholder markers remain in the docstring.
-
-    Args:
-        func: The function being checked.
-        doc: Parsed docstring, or None if absent.
-        config: Rule configuration including severity and tier.
-
-    Returns:
-        List with one DOC099 diagnostic when a placeholder marker is found.
-    """
+    """Check that no stub placeholder markers remain in the docstring."""
     if doc is None:
         return []
     if not _FILL_RE.search(doc.raw):

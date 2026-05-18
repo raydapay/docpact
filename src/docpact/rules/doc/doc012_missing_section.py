@@ -64,16 +64,7 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check that all required sections are present for the function's tier.
-
-    Args:
-        func: The function being checked.
-        doc: Parsed docstring, or None if absent.
-        config: Rule configuration including severity and tier.
-
-    Returns:
-        List of DOC012 diagnostics for each missing required section.
-    """
+    """Check that all required sections are present for the function's tier."""
     if doc is None:
         return []
 

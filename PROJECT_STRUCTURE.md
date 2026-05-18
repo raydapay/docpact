@@ -67,9 +67,8 @@ src/docpact/
 │   └── (fix/, heur/, ty/, sem/ namespaces reserved)
 │
 └── output/                ← diagnostic formatters
-    ├── __init__.py
-    ├── text.py            ← human-readable output
-    └── json.py            ← machine-readable output
+    └── __init__.py        ← format_text, format_json, format_summary
+                             (split into submodules when SARIF ships in v0.2)
 ```
 
 ### Design rules for this layout

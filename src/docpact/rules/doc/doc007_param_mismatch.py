@@ -45,16 +45,7 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check Args section consistency with the function signature.
-
-    Args:
-        func: The function being checked.
-        doc: Parsed docstring, or None if absent.
-        config: Rule configuration including severity and tier.
-
-    Returns:
-        List of DOC007 diagnostics for each mismatch found.
-    """
+    """Check Args section consistency with the function signature."""
     if doc is None:
         return []
 

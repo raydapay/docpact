@@ -36,14 +36,5 @@ def check(
     doc: ParsedDocstring | None,
     config: RuleConfig,
 ) -> list[RuleResult]:
-    """Check Pydantic model fields for Field(description=...) — deferred.
-
-    Args:
-        func: The function being checked.
-        doc: Parsed docstring, or None if absent.
-        config: Rule configuration including severity and tier.
-
-    Returns:
-        Empty list; implementation deferred until class-level analysis is available.
-    """
+    """Check Pydantic model fields for Field(description=...) — deferred."""
     return []  # Phase 8: requires class-level analysis

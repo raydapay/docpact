@@ -13,6 +13,13 @@ Syntax (default marker ``nodo``):
 
 Bare marker (without codes) suppresses all diagnostics on that line and
 is itself a violation of FIX001.
+
+Why the regex is built per call rather than as a module-level constant:
+    ``suppress_comment`` is a per-project config value, not a global. A
+    module-level regex would bake in ``nodo`` at import time and break any
+    project that configures a different marker. ``_build_re`` compiles the
+    pattern once per ``parse_suppressions`` call — negligible cost, correct
+    semantics.
 """
 
 from __future__ import annotations
@@ -47,6 +54,13 @@ def parse_suppressions(
     Returns:
         Mapping of 1-based line number to suppressed code set. An empty
         frozenset means a bare marker (suppress all codes on that line).
+
+    Constraints:
+        Suppression must appear on the ``def`` keyword line, not on the
+        closing ``) -> None:`` line. docpact matches by ``func.line`` (the
+        line of the ``def`` keyword). ruff's formatter moves trailing comments
+        to ``) -> None:`` when it wraps signatures — use ``def foo(  # nodo:``
+        (after the opening paren) to keep the comment on the ``def`` line.
     """
     pattern = _build_re(markers)
     result: dict[int, frozenset[str]] = {}
@@ -74,7 +88,9 @@ def is_suppressed(
             same file.
 
     Returns:
-        True when the result's (line, code) matches a suppression entry.
+        True when the diagnostic's line has a suppression entry that covers
+        its code (or a bare entry that covers all codes). False when the line
+        has no entry or the code is not listed.
     """
     line_codes = file_suppressions.get(result.location.line)
     if line_codes is None:
@@ -93,6 +109,6 @@ def apply_suppressions(
         suppressions: Per-file suppression maps, keyed by absolute path.
 
     Returns:
-        Filtered list with suppressed entries removed.
+        Subset of results for which no suppression applies; preserves input order.
     """
     return [r for r in results if not is_suppressed(r, suppressions.get(r.location.file_path, {}))]

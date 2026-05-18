@@ -5,6 +5,10 @@ or JSON (machine-readable). SARIF is planned for v0.2.
 
 All formatters consume the same list[RuleResult] input. The CLI selects
 the formatter based on --format.
+
+Why a single module rather than text.py / json.py / sarif.py:
+    At three small functions the split would be premature. When SARIF lands
+    in v0.2, splitting into submodules at that point is the natural trigger.
 """
 
 from __future__ import annotations
