@@ -10,7 +10,7 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. Codebase is self-hosting. Several v0.2 items already shipped.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099,
-MCP001, FIX001–FIX002, TY001–TY002. 575 tests, 96% coverage.
+MCP001, FIX001–FIX002, TY001–TY002. 607 tests, 96% coverage.
 
 Active: maintenance, v0.2 delivery. See "Recent changes" and "v0.2 scope" below.
 
@@ -110,18 +110,15 @@ Commits: `db3ae18`, `4c5c8f1`
 - **FIX002** — suppression without `-- reason`.
 - **SARIF output** — `--format sarif`.
 - **TY001, TY002** — type/docstring contradiction rules.
+- **`[tool.docpact.per-file-tier]`** — per-file tier override (was `tiers`; renamed with deprecation warning).
+- **`--add-suppression`** — baselining flag; adds `# nodo: CODE -- reason` to all currently-failing lines.
 
-### Remaining
+### Dropped (out of scope for v0.2)
 
-- **HEUR rules** — heuristic namespace. Cargo-cult docstring detection is the
-  primary candidate (e.g., `x: The x value.`). Deferred: threshold for "bad"
-  vs. "concise" needs a concrete spec before implementation.
-- **Sphinx/RST docstring parser** — infrastructure ready (`_sections_from_griffe`
-  helper exists). Add on demand; not scheduled.
-- **Third-party rule plugin API** — rules are internal.
-- **Tier 4 automatic detection** — explicit config-only for now.
-- **Semantic mode** (`SEM` namespace) — LLM-based analysis. No code, no prompts,
-  no API client. Entire subsystem absent.
+- **HEUR rules** — threshold for "bad" vs. "concise" has no concrete spec. Dropped until real demand surfaces.
+- **Sphinx/RST docstring parser** — no demand. Infrastructure ready when needed.
+- **Third-party rule plugin API** — premature; internal rules only.
+- **Semantic mode** (`SEM` namespace) — LLM-based analysis. No timeline.
 - **DOC098** (doctest exception) — **explicitly out of scope, not merely deferred.**
   Executing docstring Examples sections has arbitrary side effects. No safe
   sandboxing strategy exists for a structural linter. The rule stub remains in

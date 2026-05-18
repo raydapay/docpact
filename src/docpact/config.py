@@ -122,15 +122,25 @@ def _parse_section(raw: dict[str, object]) -> Config:
             pattern = str(k)
             per_file_ignores[pattern] = _parse_string_list(codes, f"per-file-ignores.{pattern!r}")
 
-    if "tiers" in raw:
-        tiers_raw = raw["tiers"]
+    for _tier_key in ("per-file-tier", "tiers"):
+        if _tier_key not in raw:
+            continue
+        if _tier_key == "tiers":
+            warnings.warn(
+                "[tool.docpact.tiers] is deprecated; rename the table to "
+                "[tool.docpact.per-file-tier].",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        tiers_raw = raw[_tier_key]
         if not isinstance(tiers_raw, dict):
-            raise ConfigError("tiers: expected a table")
+            raise ConfigError(f"{_tier_key}: expected a table")
         for k, tier_val in tiers_raw.items():
             pattern = str(k)
             if not isinstance(tier_val, int) or tier_val not in (1, 2, 3, 4):
-                raise ConfigError(f"tiers.{pattern!r}: tier must be an integer 1-4")
+                raise ConfigError(f"{_tier_key}.{pattern!r}: tier must be an integer 1-4")
             tier_overrides[pattern] = tier_val
+        break  # per-file-tier wins; don't also process tiers
 
     suppress_comment: tuple[str, ...] = ("nodo",)
     if "suppress_comment" in raw:

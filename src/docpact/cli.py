@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 import click
 
+from docpact.baseline import add_suppressions as baseline_add
+from docpact.baseline import diff_suppressions as baseline_diff
 from docpact.config import (
     Config,
     file_ignores_for,
@@ -178,6 +180,20 @@ def main() -> None:
     metavar="CODE",
     help="Rule codes or prefixes to disable (overrides config).",
 )
+@click.option(
+    "--add-suppression",
+    "add_suppression",
+    is_flag=True,
+    help="Add # nodo: suppression comments for all current violations (baselining).",
+)
+@click.option(
+    "--suppression-reason",
+    "suppression_reason",
+    default="baseline",
+    show_default=True,
+    metavar="TEXT",
+    help="Reason text appended to generated suppression comments.",
+)
 def check(  # nodo: DOC012 -- click params; Args section would duplicate --help text
     paths: tuple[str, ...],
     do_fix: bool,
@@ -187,6 +203,8 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     exit_zero: bool,
     cli_select: tuple[str, ...],
     cli_ignore: tuple[str, ...],
+    add_suppression: bool,
+    suppression_reason: str,
 ) -> None:
     """Check docstrings against the configured schema."""
     if unsafe_fixes and not do_fix:
@@ -226,7 +244,8 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
 
     apply_unsafe = unsafe_fixes and do_fix
 
-    if diff:
+    # --diff without --add-suppression shows fix preview and exits.
+    if diff and not add_suppression:
         patch = diff_fixes(results, unsafe=apply_unsafe)
         if patch:
             click.echo(patch, nl=False)
@@ -242,6 +261,24 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
 
     # Apply inline suppressions before output and exit-code evaluation.
     visible = apply_suppressions(results, suppressions)
+
+    if add_suppression:
+        if diff:
+            patch = baseline_diff(
+                visible, reason=suppression_reason, markers=config.suppress_comment
+            )
+            if patch:
+                click.echo(patch, nl=False)
+            sys.exit(0)
+        counts = baseline_add(visible, reason=suppression_reason, markers=config.suppress_comment)
+        total = sum(counts.values())
+        if total:
+            click.echo(
+                f"Added suppression comments to {total} location(s) across {len(counts)} file(s)."
+            )
+        else:
+            click.echo("No violations to suppress.")
+        sys.exit(0)
 
     cwd = Path.cwd()
     if output_format == "text":

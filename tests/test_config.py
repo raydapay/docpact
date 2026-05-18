@@ -75,7 +75,7 @@ def test_load_config_reads_full_pyproject(tmp_path: Path) -> None:
         "[tool.docpact.per-file-ignores]\n"
         '"src/legacy/**" = ["DOC"]\n'
         "\n"
-        "[tool.docpact.tiers]\n"
+        "[tool.docpact.per-file-tier]\n"
         '"src/routes.py" = 4\n'
     )
     cfg = load_config(tmp_path)
@@ -158,8 +158,23 @@ def test_config_error_on_bad_severity(tmp_path: Path) -> None:
         load_config(tmp_path)
 
 
+def test_per_file_tier_key(tmp_path: Path) -> None:
+    (tmp_path / "docpact.toml").write_text('[per-file-tier]\n"src/mcp/*.py" = 3\n')
+    cfg = load_config(tmp_path)
+    assert cfg.tier_overrides == {"src/mcp/*.py": 3}
+
+
+def test_tiers_key_still_works_with_deprecation_warning(tmp_path: Path) -> None:
+    (tmp_path / "docpact.toml").write_text('[tiers]\n"src/routes.py" = 4\n')
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = load_config(tmp_path)
+    assert cfg.tier_overrides == {"src/routes.py": 4}
+    assert any("per-file-tier" in str(w.message) for w in caught)
+
+
 def test_config_error_on_invalid_tier(tmp_path: Path) -> None:
-    (tmp_path / "docpact.toml").write_text('[tiers]\n"src/foo.py" = 5\n')
+    (tmp_path / "docpact.toml").write_text('[per-file-tier]\n"src/foo.py" = 5\n')
     with pytest.raises(ConfigError, match="tier must be"):
         load_config(tmp_path)
 

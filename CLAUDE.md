@@ -10,12 +10,12 @@ Copy this file to those names if needed; treat them as equivalent.
 
 ## Current state
 
-**v0.1 complete. Codebase is self-hosting. Several v0.2 items already shipped.**
+**v0.1 complete. v0.2 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099,
-MCP001, FIX001–FIX002. 504 tests, 96% coverage.
+MCP001, FIX001–FIX002, TY001–TY002. 607 tests, 96% coverage.
 
-Active work: maintenance, v0.2 delivery. Next up: SARIF output (`--format sarif`).
+Active work: maintenance. v0.2 shipped in full — see PROGRESS.md.
 
 Key facts a fresh session needs:
 - Suppression syntax is `# nodo: CODE -- reason` (not `# noqa`). See ADR-004.
@@ -32,6 +32,10 @@ Key facts a fresh session needs:
   `_run_checks` in `cli.py` and skipped in the function-level loop via a code skip set.
 - `format = "numpy"` in `[tool.docpact]` selects `NumpyParser`; default is Google.
 - docpact's own config uses `select = ["DOC", "MCP", "FIX"]` — FIX namespace opted in.
+- `[tool.docpact.per-file-tier]` overrides tier per glob pattern (e.g. `"src/mcp/*.py" = 3`).
+  Old key `[tool.docpact.tiers]` still works with a deprecation warning.
+- `--add-suppression` adds `# nodo: CODE -- baseline` to every currently-failing line.
+  `--add-suppression --diff` previews without writing. `--suppression-reason TEXT` customises the reason.
 
 **The project owner is Ray.** Address him directly when asking questions. Ray's
 working preferences are documented below under "Working with Ray."

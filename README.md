@@ -42,6 +42,7 @@ docpact check src/ --fix              # apply safe fixes in-place
 docpact check src/ --diff             # preview fixes as a unified diff
 docpact check src/ --format sarif     # SARIF 2.1.0 for GitHub Code Scanning
 docpact check src/ --format json      # machine-readable JSON
+docpact check src/ --add-suppression  # baseline: add # nodo: comments for all current violations
 docpact generate src/                 # insert stub docstrings for undocumented functions
 docpact list-rules                    # list all rules with severity and fixability
 ```
@@ -70,7 +71,35 @@ docpact assigns tiers automatically from decorators and file structure:
 | 3 | MCP-exposed tools | Tier 2 + Raises, Constraints, Stability, MCP |
 | 4 | FastAPI routes via FastMCP | Same as Tier 3 |
 
-Most projects need no tier config. Overrides are available when automatic assignment doesn't fit.
+Most projects need no tier config. When automatic assignment doesn't fit — for example, a project using a custom MCP registry instead of `@mcp.tool` decorators — override per file:
+
+```toml
+[tool.docpact.per-file-tier]
+"src/domain/mcp/tools/*.py" = 3
+"src/routes/*.py" = 4
+```
+
+## Adopting in an existing codebase
+
+A codebase with hundreds of existing violations can't add docpact to CI cleanly without first silencing the backlog. The `--add-suppression` flag does this in one step:
+
+```bash
+docpact check src/ --add-suppression
+```
+
+This adds `# nodo: CODE -- baseline` to every `def` or `class` line that currently has a violation. On the next run, those lines are suppressed; only new violations fail the build. Work off the backlog by removing suppression comments as you write the missing docstrings.
+
+Preview what will be added before committing:
+
+```bash
+docpact check src/ --add-suppression --diff
+```
+
+Use a custom reason to link to a tracking issue:
+
+```bash
+docpact check src/ --add-suppression --suppression-reason "pre-docpact backlog, see #512"
+```
 
 ## Configuration
 
