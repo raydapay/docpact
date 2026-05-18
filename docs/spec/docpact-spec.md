@@ -155,23 +155,22 @@ This specification describes the complete system. Not all of it ships in v0.1. T
 ### 5.1 v0.1 — initial release
 
 - Structural mode (deterministic checks only)
-- Google docstring parser
+- Google and NumPy docstring parsers (`format = "google"` or `"numpy"`)
 - Tiers 1, 2, 3 (Tier 4 partial: explicit configuration only, no detection)
-- Rule namespaces: `DOC`, `MCP`, `FIX`, `HEUR`
+- Rule namespaces with rules: `DOC`, `MCP`, `FIX`, `TY`
+- Rule namespace allocated, no rules yet: `HEUR`
 - Commands: `check`, `check --fix`, `check --unsafe-fixes`, `generate`, `show-schema`, `list-rules`
 - Configuration via `pyproject.toml` and `docpact.toml`
+- Inline suppression via `# nodo: CODE -- reason` (configurable via `suppress_comment`)
 - Pre-commit integration
-- Output formats: text, JSON
+- Output formats: text, JSON, SARIF 2.1.0
 
 Rationale: structural mode delivers the core differentiator (deterministic enforcement of machine-consumed contracts, MCP/decorator conflict detection, signature consistency) without depending on LLM availability, network access, or non-deterministic analysis. The MVP is useful on day one.
 
-### 5.2 v0.2 — near-term additions
+### 5.2 v0.2 — remaining work
 
-- SARIF output format
-- NumPy docstring parser (via the parser abstraction in section 7.2)
-- Tier 4 heuristic detection (`HEUR` namespace expansion)
+- Tier 4 heuristic detection (`HEUR` namespace rules — first rules in that namespace)
 - `See Also` AST symbol resolution
-- ty integration (`TY` rule namespace)
 - Pydantic integration deepening
 
 ### 5.3 Deferred with reasoning
@@ -264,8 +263,8 @@ The human developer is a consumer, not the primary target. In a workflow where c
 │                   DocstringParser                       │
 │         (abstract interface, format-specific impls)     │
 │                                                         │
-│   GoogleParser    NumPyParser*    SphinxParser*          │
-│   (v0.1 baseline)  (* planned, post-v0.1)               │
+│   GoogleParser    NumPyParser    SphinxParser*            │
+│   (v0.1)          (v0.1)        (* deferred)             │
 ├─────────────────────────────────────────────────────────┤
 │              Python AST + griffe                        │
 │      Source parsing, signature extraction,              │
@@ -296,7 +295,7 @@ class DocstringParser(Protocol):
     def format_name(self) -> str: ...  # "google" | "numpy" | "sphinx"
 ```
 
-This abstraction means NumPy and Sphinx parser implementations can be added without modifying any rule. v0.1 ships the Google parser only. The config key `format = "google"` accepts future values `"numpy"` and `"sphinx"` without further design work.
+This abstraction means additional parser implementations can be added without modifying any rule. v0.1 ships Google and NumPy parsers. The config key `format = "google"` or `"numpy"` selects the parser; `"sphinx"` is deferred indefinitely.
 
 ### 7.3 Rule engine
 
@@ -343,7 +342,7 @@ Configuration-heavy tools shift decision-making to the user. When every rule is 
 
 `docpact` is opinionated:
 
-**One baseline format.** Google-style docstrings are the baseline for v0.1. NumPy is supported in v0.2 via the parser abstraction. Sphinx is not on the roadmap.
+**One baseline format.** Google-style docstrings are the default. NumPy is also supported via `format = "numpy"`. Sphinx is not on the roadmap.
 
 **Decorator and docstring are mutually exclusive for MCP metadata.** A function may declare its MCP description via `@mcp.tool(description="...")` or via a docstring `MCP:` section, not both. If both are present, `docpact` reports `MCP001`. The resolution (decorator wins) is available as an unsafe fix.
 
@@ -574,14 +573,13 @@ Operates on source files via AST and docstring parsing. No imports, no network a
 **Checks:**
 - Section presence and ordering
 - Parameter list consistency with function signatures
-- Type annotation / docstring type field conflicts
+- Type annotation contradictions: `-> None` with substantive Returns prose (`TY001`); non-None annotation with canonical-empty Returns (`TY002`)
 - Decorator / docstring MCP metadata conflicts
 - Stability field validity
-- See Also reference format
 - Summary line heuristics (length, prohibited prefixes, imperative mood detection)
 - Constraint section presence on Tier 3 functions
 - `Annotated` constraint duplication in Constraints prose (`DOC051`)
-- Mutates section presence when side effects are detectable
+- Pydantic model fields missing `Field(description=...)` (`DOC050`)
 
 **Performance target:** < 2 seconds on a 50,000-line codebase.
 
@@ -647,11 +645,18 @@ heuristics = "warning"
 
 ### 13.1 ty (type checker)
 
-ty constructs a type graph for the codebase. `docpact` can consume ty's output to cross-validate consistency between what ty knows about a type and what the docstring claims.
+`docpact` complements ty, not replaces it. The `TY` rule namespace catches contradictions between type annotations and docstring prose that neither tool detects alone.
 
-The primary integration point is constraint narrowing detection. If ty says a parameter is `str | None` and the docstring `Constraints` section says "must be a valid ISO date string", that is not a conflict — both can be true — but it warrants a `TY` warning that the constraint is narrower than the annotation implies.
+**Shipped in v0.1 (annotation-based):**
 
-The `TY` rule namespace is reserved for ty cross-validation. Activated via `--ty-output path/to/ty.json`. Ships in v0.2.
+- **TY001** (ERROR): function annotated `-> None` but `Returns:` section has substantive content. The annotation promises no return value; the prose contradicts it. Skips canonical-empty bodies (`None.`, `N/A`).
+- **TY002** (WARNING): non-`None` return annotation but `Returns:` body is exactly `None.` (canonical empty). `DOC012` is satisfied by presence; TY002 catches the coherence failure DOC012 misses.
+
+Both rules operate entirely on AST annotations and parsed docstring content. No external ty output is consumed; no CLI flag required.
+
+**Deeper ty integration (deferred):**
+
+Consuming ty's type-graph output (e.g., `--ty-output path/to/ty.json`) to cross-validate constraint narrowing — detecting when a docstring `Constraints` entry expresses something the annotation already encodes — is not yet implemented. If demand emerges, this is the natural next step in the TY namespace.
 
 ### 13.2 Pydantic and `Annotated`
 
@@ -692,7 +697,7 @@ ignore = ["D"]
 
 ## 14. Testing Docstring Contracts
 
-Because docstrings are part of the code and define contracts that other systems depend on, they should be testable with the same tooling used to test the rest of the code. `docpact` provides three levels of test integration. **Programmatic assertions ship in v0.1. The pytest plugin ships in v0.2.**
+Because docstrings are part of the code and define contracts that other systems depend on, they should be testable with the same tooling used to test the rest of the code. `docpact` provides three levels of test integration. **Programmatic assertions ship in v0.1. The pytest plugin is deferred — see §5.3.**
 
 ### 14.1 Programmatic assertions (v0.1)
 
@@ -784,9 +789,12 @@ ignore = ["DOC013"]
 # Files and directories to exclude.
 exclude = ["tests/", "migrations/", "**/_generated.py"]
 
-# Docstring format.
-# v0.1: "google" only. v0.2: "numpy".
+# Docstring format: "google" (default) or "numpy".
 format = "google"
+
+# Inline suppression marker(s). Default: ["nodo"].
+# Add "noqa" during migration from # noqa: syntax.
+suppress_comment = ["nodo"]
 
 # Default severity for all HEUR rules.
 heuristics = "warning"
@@ -814,12 +822,16 @@ undescribed_fields = "warning"  # error | warning | off
 ### 15.2 Inline suppression
 
 ```python
-def legacy_function(x, y):  # noqa: DOC001 -- pre-docpact legacy, tracked in #412
+def legacy_function(x, y):  # nodo: DOC001 -- pre-docpact legacy, tracked in #412
     """Does something."""
     ...
 ```
 
-Bare `# noqa` without a reason emits `FIX001`. Suppression without a documented reason is itself a defect.
+The suppression marker is `nodo` by default, configurable via `suppress_comment = [...]` in `[tool.docpact]`. Using `["nodo", "noqa"]` accepts both during a migration period. The `# noqa` form was the original choice but was changed (ADR-004) because ruff's RUF100 silently strips unknown `# noqa` codes.
+
+**Placement:** the suppression comment must be on the `def` keyword line. Placing it on the closing `) -> Type:` line silently fails — `func.line` is the `def` line.
+
+Bare suppression without codes emits `FIX001`. Suppression with codes but without `-- reason` emits `FIX002`. Both are themselves defects.
 
 ### 15.3 Error code structure
 
@@ -828,8 +840,8 @@ Bare `# noqa` without a reason emits `FIX001`. Suppression without a documented 
 | `DOC` | Structural docstring rules | v0.1 |
 | `MCP` | MCP-specific rules (decorator conflicts, schema metadata) | v0.1 |
 | `FIX` | Fix-mode diagnostics | v0.1 |
-| `HEUR` | Heuristic rules | v0.2 (namespace allocated v0.1) |
-| `TY` | ty integration cross-validation | v0.2 |
+| `TY` | Annotation/docstring contradiction rules | v0.1 |
+| `HEUR` | Heuristic rules | v0.2 (namespace allocated v0.1; no rules yet) |
 | `SEM` | Semantic mode findings | Deferred (experimental) |
 
 Error codes with `[*]` suffix indicate a fix is available.
@@ -852,18 +864,15 @@ docpact list-rules  [--format {text,json}]
   --unsafe-fixes              Apply unsafe fixes. Requires --fix.
   --select CODES              Rule codes or prefixes to enable.
   --ignore CODES              Rule codes or prefixes to disable.
-  --format {text,json}        Output format. Default: text.
+  --format {text,json,sarif}  Output format. Default: text.
   --exit-zero                 Always exit 0.
   --diff                      Show diff of --fix output without applying.
-  --doctest                   Run Examples sections as doctests.
 ```
 
-### `check` additions (v0.2+)
+### `check` additions (future)
 
 ```
   --watch                     Re-run on file changes.
-  --format sarif              SARIF output for code-scanning platforms.
-  --ty-output PATH            Path to ty JSON output for TY cross-validation.
   --semantic                  Enable semantic mode (when available).
   --changed-only              Semantic mode: changed functions only.
 ```
@@ -892,14 +901,14 @@ Optional:    Notes, Alternatives, References, Examples
 
 ```yaml
 repos:
-  - repo: https://github.com/your-org/docpact
-    rev: v0.1.0
+  - repo: https://github.com/raydapay/docpact
+    rev: main
     hooks:
       - id: docpact
         args: [--fix]
 ```
 
-### 17.2 GitHub Actions — structural gate (v0.1)
+### 17.2 GitHub Actions — text/JSON gate
 
 ```yaml
 name: docpact
@@ -912,19 +921,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv tool run docpact check src/ --format json --output-file docpact.json
+      - run: uv tool run docpact check src/
 ```
 
-### 17.3 GitHub Actions — SARIF gate (v0.2)
+### 17.3 GitHub Actions — SARIF gate (Code Scanning)
 
 ```yaml
-- run: uv tool run docpact check src/ --format sarif --output-file docpact.sarif
+- run: uv tool run docpact check src/ --format sarif --exit-zero > docpact.sarif
 - uses: github/codeql-action/upload-sarif@v3
   with:
     sarif_file: docpact.sarif
 ```
 
-### 17.4 pytest in CI (v0.2)
+### 17.4 pytest in CI (deferred — see §5.3)
 
 ```yaml
 - run: uv run pytest src/ --docpact --tb=short
