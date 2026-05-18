@@ -15,7 +15,11 @@ Copy this file to those names if needed; treat them as equivalent.
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099,
 MCP001, FIX001–FIX002, TY001–TY002. 607 tests, 96% coverage.
 
-Active work: maintenance. v0.2 shipped in full — see PROGRESS.md.
+Active work: v0.3 delivery. v0.2 shipped in full — see PROGRESS.md for v0.3 scope.
+
+v0.3 priorities (ordered): `--changed-only <git-ref>`, `__all__` awareness in tier
+assignment, function-level tier pragma (`# docpact: tier=3`), DOC021 (default-value
+drift in Args prose).
 
 Key facts a fresh session needs:
 - Suppression syntax is `# nodo: CODE -- reason` (not `# noqa`). See ADR-004.

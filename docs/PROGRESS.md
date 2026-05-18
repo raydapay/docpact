@@ -136,6 +136,102 @@ Commits: `db3ae18`, `4c5c8f1`
 
 ---
 
+## v0.3 scope
+
+### Priorities (ordered)
+
+1. **`--changed-only <git-ref>`** — restrict checks to files changed relative to a
+   git ref (e.g. `main`, `HEAD~1`). Eliminates the adoption path friction for teams
+   who want docpact in CI before they've cleaned up the backlog but don't want to
+   use `--add-suppression`. Usage: `docpact check src/ --changed-only main`.
+   Implementation: `git diff --name-only <ref>` + filter the collected file list.
+
+2. **`__all__` awareness in tier assignment** — when a module defines `__all__`,
+   functions in the list are definitively public (Tier 2 floor) even if their name
+   starts with an underscore or they live in a file without a public-path indicator.
+   Functions absent from `__all__` in a module that defines it are definitively
+   private (Tier 1 ceiling). Currently docpact infers visibility from file path and
+   decorators alone; `__all__` is the explicit contract and should win.
+
+3. **Function-level tier pragma** (`# docpact: tier=3`) — override tier for a single
+   function without a glob pattern. Needed when one function in a file is at a
+   different tier than the rest, and a file-glob override would be too coarse.
+   Syntax: inline comment on the `def` line, same placement rules as `# nodo:`.
+   Config: `allow_pragma = true` (opt-in; default off to prevent abuse).
+
+4. **DOC021** — "Defaults to X" drift. Fires when an Args entry contains a
+   `Defaults to <value>` phrase and the signature's default does not match.
+   Example: `count: Number of items. Defaults to 10.` but `def f(count: int = 5)`.
+   Severity: WARNING. No auto-fix (intent is ambiguous — the code or the doc could
+   be wrong). ty cannot catch this; it checks type consistency, not default-value
+   prose consistency.
+
+### MCP-REG cluster — postponed, outline below
+
+The recon team proposed cross-file rules that validate MCP tool registration
+consistency: ToolSpec fields ↔ docstring Args, ToolSpec.description ↔ docstring
+summary, ToolSpec.schema ↔ Constraints section.
+
+**Why postponed:** These rules require resolving the type of `ToolSpec(...)` across
+files — finding where the class is defined, reading its field names, and correlating
+them with the docstring of the function being registered. That is cross-file type
+resolution, which is a fundamental architectural boundary for docpact. docpact
+operates on one file at a time; it never imports code and has no module graph.
+Crossing this boundary would require either (a) a full multi-file AST pass with
+import resolution (effectively building a partial type checker), or (b) requiring
+the user to annotate the relationship explicitly (defeating the purpose).
+
+**What it would be useful for:** The immediate value is retiring bespoke per-project
+test files like `tests/test_contract_discipline.py` that enforce these constraints
+with hand-written assertions. A declarative rule would be more robust and require
+no per-project maintenance. The long-term value is catching silent drift when a
+ToolSpec is updated but the tool docstring is not.
+
+**Decision pending:** Whether docpact should ever cross the per-file boundary at all.
+If the answer is no, MCP-REG-001 is permanently out of scope. If the answer is yes,
+it needs an ADR and a new architectural layer. Not deciding now.
+
+---
+
+## Considered and decided not to implement
+
+These are decisions that surfaced during design or adoption discussions and were
+explicitly rejected. Recorded here so the reasoning is not relitigated.
+
+- **DOC020** — type in docstring ≠ type annotation. Fires when an Args entry
+  contains an explicit type (e.g. `count (int): ...`) that doesn't match the
+  annotation. **Rejected:** Modern Python codebases do not write types in docstring
+  Args entries when they have full type annotations — the pattern is dying. For the
+  codebases that still do, the discrepancy is caught by ty (for return types) or
+  is harmless noise. The signal-to-noise ratio is too low. Code reserved.
+
+- **DOC030** — undocumented exception. Fires when a function raises an exception
+  not listed in the Raises section. **Rejected:** Static analysis of `raise`
+  statements produces high false-positive rates from transitive exceptions (a
+  function that calls `dict[key]` implicitly raises `KeyError`; a function that
+  calls any I/O raises `OSError`). Exhaustive Raises sections for most functions
+  would be counterproductive. The rule could be narrowed to explicit `raise` at
+  the top level, but that case is already caught by careful code review and is
+  not worth a lint rule.
+
+- **REF001** — broken `See Also` links. Fires when a `See Also` section references
+  a symbol that does not exist in the module. **Rejected:** Out of scope. docpact
+  is a docstring structure linter, not a cross-reference resolver or link checker.
+  Symbol resolution requires import analysis or a full index of the project.
+
+- **MCP-REG-003** — ExamplePair validation. Specific to one team's internal
+  `ExamplePair(input=..., output=...)` structure for illustrating MCP tool
+  behavior. **Rejected:** Not generalizable. A team-specific pattern should be
+  enforced with a team-specific test or a project-local plugin, not a built-in
+  docpact rule.
+
+- **`--baseline` file** — persist suppressed violations to a JSON file (ruff's
+  approach with `per-file-ignores`). **Superseded:** `--add-suppression` writes
+  inline suppressions, which is more explicit, diff-friendly, and requires no
+  out-of-band file to stay in sync. The inline approach also survives file renames.
+
+---
+
 ## Phase log
 
 ### Phase 1 — Parser and model ✓
