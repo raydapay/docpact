@@ -1,28 +1,37 @@
 # docpact
 
-A linter and validator for Python docstrings — built for the audiences that treat them as machine-readable contracts.
+**ruff checks your code. ty checks your types. Nothing checks your docstrings.**
 
 ---
 
-Python functions exposed as MCP tools, FastAPI routes, or called by coding agents publish their contracts through docstrings. Those docstrings are now read by machines making consequential decisions: which tool to invoke, which arguments to pass, whether a proposed change is safe. A stale or inconsistent docstring silently misdirects them.
+Until now.
 
-docpact validates that required sections are present for the function's exposure tier, that documented parameters match the signature, and that the type annotation and the prose don't contradict each other. It fails fast on drift and provides safe automated fixes for the unambiguous cases.
+Coding agents, MCP tools, and LLM clients read docstrings to decide what to call and how to call it. When the code changes and the docstring doesn't, they're working from a lie. A renamed parameter sends them to the wrong argument. A missing `Constraints` section leaves out the preconditions they need to call safely. The drift is invisible in review and silent at runtime — until something breaks in a way that's hard to trace.
+
+docpact is a CI-first structural linter for Python docstrings. It enforces docstring contracts the same way ruff enforces style and ty enforces types: as a gate that fails fast on drift.
 
 ```
 $ docpact check src/
-src/notify.py:12:0: DOC012 Tier 3 function missing required section: Constraints
-src/notify.py:12:0: DOC012 Tier 3 function missing required section: Stability
-src/payments.py:8:0: DOC007 Documented parameter not in signature: amout (did you mean: amount?)
-src/users.py:31:0: TY001 Return annotation is 'None' but Returns section documents a value
-Found 4 errors.
+
+src/tools/payments.py:34:0: DOC007 Documented parameter 'amount' not in signature
+  = help: Rename or remove the 'amount' entry in Args
+src/tools/users.py:12:0: DOC012 Tier 3 function missing required section: Constraints
+src/tools/users.py:12:0: DOC012 Tier 3 function missing required section: Stability
+src/tools/notify.py:88:0: TY001 Return annotation is 'None' but Returns section documents a value
+
+Found 4 errors. Run 'docpact check src/ --fix' to apply 1 safe fix.
 ```
+
+The first error: `payments.py` was refactored from `amount` to `amount_cents` six weeks ago. The docstring wasn't updated. Every agent calling that tool has been generating broken payloads ever since.
+
+---
 
 ## Install
 
 ```bash
-pip install docpact
+pip install git+https://github.com/raydapay/docpact.git
 # or
-uv add docpact
+uv add git+https://github.com/raydapay/docpact.git
 ```
 
 ## Usage
@@ -42,24 +51,26 @@ docpact list-rules                    # list all rules with severity and fixabil
 | Namespace | Rules | What |
 |---|---|---|
 | `DOC` | DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099 | Structural completeness: missing docstrings, missing sections, parameter mismatch, Pydantic field descriptions, stale `[FILL]` markers |
-| `TY` | TY001–TY002 | Type/docstring coherence: annotation vs. prose contradictions |
-| `MCP` | MCP001 | MCP-specific conflicts: decorator `description=` vs. docstring `MCP:` section |
+| `TY` | TY001–TY002 | Type/docstring coherence: `-> None` with substantive Returns prose; non-None return with empty Returns |
+| `MCP` | MCP001 | MCP-specific conflicts: decorator `description=` duplicates docstring `MCP:` section |
 | `FIX` | FIX001–FIX002 | Suppression hygiene: bare suppression comments, missing `-- reason` |
 
 Full rule documentation: [`docs/rules/`](docs/rules/).
 
 ## Tier model
 
-docpact assigns each function a *tier* based on who consumes it and enforces the appropriate schema:
+Not every function needs the same documentation depth. An internal helper needs a summary. An MCP tool needs `Constraints`, `Stability`, and `MCP` sections — because the agent calling it needs that context to call safely.
 
-| Tier | Who | Required sections |
+docpact assigns tiers automatically from decorators and file structure:
+
+| Tier | Audience | Required sections |
 |---|---|---|
 | 1 | Internal | Summary |
 | 2 | Package-public API | Summary, Args (when params present), Returns (when non-None) |
 | 3 | MCP-exposed tools | Tier 2 + Raises, Constraints, Stability, MCP |
 | 4 | FastAPI routes via FastMCP | Same as Tier 3 |
 
-Tier assignment is automatic from decorators and file structure. Overrides are available in config.
+Most projects need no tier config. Overrides are available when automatic assignment doesn't fit.
 
 ## Configuration
 
@@ -100,24 +111,23 @@ def build_internal_graph(  # nodo: DOC012 -- internal; tier override not yet wir
 
 ```yaml
 repos:
-  - repo: https://github.com/your-org/docpact
-    rev: v0.1.0
+  - repo: https://github.com/raydapay/docpact
+    rev: main
     hooks:
       - id: docpact
 ```
 
-## What docpact does NOT do
+## Boundaries
 
-- Does not replace ruff, ty, or any type checker — it validates the docstring layer specifically.
-- Does not verify behavioral correctness — it checks structural consistency. See spec §1.4.
-- Does not import the code under analysis — all checks are purely static.
-- Does not perform LLM-based semantic analysis in v0.1 — that mode is designed in the spec but explicitly deferred.
+docpact checks structure, not meaning. A docstring that passes every check is not necessarily a good docstring. It is a *consistent* one: the Args match the signature, the required sections are present, the types don't contradict the prose. Content quality — whether the description is actually useful — is the author's responsibility.
+
+It does not replace ruff or ty. It does not import the code it analyzes. It does not perform LLM-based semantic analysis (designed in the spec, explicitly deferred).
 
 ## Status
 
-v0.1 complete. Self-hosting: docpact checks its own source on every CI run.
+Self-hosting: docpact validates its own source on every commit. 575 tests, 96% coverage.
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099, MCP001, FIX001–FIX002, TY001–TY002. 558 tests, 96% coverage.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099, MCP001, FIX001–FIX002, TY001–TY002.
 
 ## Documentation
 
