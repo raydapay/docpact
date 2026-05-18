@@ -35,7 +35,7 @@ import docpact.rules.mcp.mcp001_decorator_docstring_conflict  # noqa: F401
 from docpact.config import Config, file_ignores_for, file_is_excluded, load_config, rule_is_enabled
 from docpact.fix import apply_fixes, diff_fixes
 from docpact.output import format_json, format_summary, format_text
-from docpact.parser.docstring import GoogleParser
+from docpact.parser.docstring import GoogleParser, NumpyParser
 from docpact.parser.source import extract_functions
 from docpact.rules._registry import RuleConfig, all_rules
 from docpact.rules.doc.doc002_module_docstring import check_module_docstring
@@ -70,7 +70,9 @@ def _run_checks(
     config: Config,
 ) -> tuple[list[RuleResult], dict[Path, dict[int, frozenset[str]]]]:
     """Run all enabled rules over the given files and return results with suppression maps."""
-    parser = GoogleParser()
+    parser: GoogleParser | NumpyParser = (
+        NumpyParser() if config.docstring_format == "numpy" else GoogleParser()
+    )
     rules = all_rules()
     results: list[RuleResult] = []
     suppressions: dict[Path, dict[int, frozenset[str]]] = {}

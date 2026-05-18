@@ -49,7 +49,7 @@ _SEVERITY_MAP: dict[str, Severity] = {
     "off": Severity.OFF,
 }
 
-_VALID_FORMATS = {"google"}
+_VALID_FORMATS = {"google", "numpy"}
 
 
 def _parse_severity(value: object, key: str) -> Severity:
