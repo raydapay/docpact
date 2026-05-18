@@ -1,104 +1,58 @@
 # CLAUDE.md
 
-This file is auto-loaded by Claude Code on every session in this repository. It establishes context, conventions, and constraints for implementation work. Read it before doing anything else.
+This file is auto-loaded by Claude Code on every session in this repository.
+It is the agent contract — stable across milestones, task-oriented, short.
 
-The same content applies to other agents (`AGENTS.md`, `GEMINI.md`). Copy this file to those names if needed; treat them as equivalent.
-
----
-
-## Project context
-
-`docpact` is a docstring contract validator for Python. It validates that function docstrings are structurally consistent with their signatures, that required information is present for the function's audience, and that conflicts between metadata sources (decorator vs. docstring) are surfaced rather than silently inconsistent.
-
-The project is targeted at three machine audiences: MCP clients consuming generated schemas, coding agents reasoning about whether modifications are safe, and CI pipelines enforcing contracts at merge time. Human developers are a secondary audience.
-
-**Current implementation status: see `docs/PROGRESS.md`.** CLAUDE.md does not track progress — it is a stable agent contract.
-
-**The project owner is Ray.** Address him directly when asking questions. Ray's working preferences are documented below under "Working with Ray."
+The same content applies to other agents (`AGENTS.md`, `GEMINI.md`).
+Copy this file to those names if needed; treat them as equivalent.
 
 ---
 
-## Read first, in this order
+## Current state
 
-1. **`docs/PROGRESS.md`** — current implementation status and phase log. Read this before anything else so you know what is done and what is next.
-2. **`docs/spec/docpact-spec.md`** — the specification. Source of truth for what docpact is. Read it fully before writing any code. ~1200 lines.
-3. **`docs/adr/README.md`** — ADR index and process.
-4. **`docs/adr/ADR-001-implementation-language.md`** — why Python + griffe, and what alternatives were rejected. Critical for understanding constraints.
-5. **`docs/adr/ADR-002-docstring-format-baseline.md`** — why only Google style in v0.1.
-6. **`docs/adr/ADR-003-tier-assignment.md`** — why tier is derived from context, not declared per-function.
-7. **`PROJECT_STRUCTURE.md`** — directory layout and design rules for the codebase.
-8. **`pyproject.toml`** — dependencies, tooling configuration, scope of dev environment.
+**v0.1 complete. Codebase is self-hosting (docpact checks itself on every CI run).**
 
-After reading, examine the existing skeleton under `src/docpact/`. Every module has a docstring explaining its purpose. Functions have stubs that raise `NotImplementedError` — those are your implementation targets.
+Active work: maintenance, v0.2 planning, and any open inbox items.
 
-Do not start writing code until you have read the specification end-to-end. The spec contains constraints and definitions that are not obvious from the file structure alone.
+Key facts a fresh session needs:
+- Suppression syntax is `# nodo: CODE` (not `# noqa`). See ADR-004.
+- `suppress_comment = ["nodo"]` in `[tool.docpact]` — configurable, accepts a list.
+- Suppression must be on the `def` line: `def foo(  # nodo: CODE` — **not** on the
+  closing `) -> None:` line. ruff's formatter moves comments there when it wraps
+  signatures; that placement silently fails to suppress because docpact matches on
+  `func.line` (the `def` keyword line).
+- `make verify` is the single quality gate. Run it before treating any change done.
+- Generated rule docs live in `docs/rules/`. CI enforces they stay in sync with the
+  registry (`make docs` + `git diff --exit-code docs/rules/`).
 
----
-
-## Mission
-
-Implement docpact v0.1 per the specification. v0.1 scope is bounded and defined in spec §5.1:
-
-- Structural mode only (deterministic checks)
-- Google docstring parser
-- Tiers 1, 2, 3 (Tier 4 partial — explicit configuration only)
-- Rule namespaces: `DOC`, `MCP`, `FIX`, `HEUR` (HEUR namespace allocated, no rules in v0.1)
-- Commands: `check` (with `--fix` and `--unsafe-fixes`), `generate`, `show-schema`, `list-rules`
-- Configuration via `pyproject.toml` and `docpact.toml`
-- Pre-commit integration
-- Output formats: text, JSON
-
-The DOC rules to ship in v0.1 are documented inline in the spec. At minimum:
-
-- `DOC001` — missing docstring
-- `DOC007` — Args/signature parameter mismatch
-- `DOC012` — required section missing for tier
-- `DOC013` — empty section in non-canonical form
-- `DOC014` — suspicious parameter name mismatch (no fix)
-- `DOC050` — Pydantic field missing description
-- `DOC051` — constraint duplicates `Annotated` metadata
-- `DOC098` — example raised an exception
-- `DOC099` — `[FILL]` stub marker not replaced
-
-MCP rules to ship:
-
-- `MCP001` — decorator description and docstring MCP section both present
-
-`MCP002` is **not in v0.1**. The structural case (neither `MCP:` section nor
-decorator `description=` present on a Tier 3 function) is covered by `DOC012`.
-The quality/completeness variant ("description is insufficient") requires
-semantic understanding and belongs in the `SEM` namespace when semantic mode
-ships.
-
-FIX rules to ship:
-
-- `FIX001` — bare `# noqa` without a documented reason
-
-This list is not exhaustive — refer to the spec for the complete set and add others as needed to fulfill spec requirements.
+**The project owner is Ray.** Address him directly when asking questions. Ray's
+working preferences are documented below under "Working with Ray."
 
 ---
 
-## Out of scope for v0.1
+## Before you start
 
-Per spec §5.3 and §5.4, the following are **explicitly excluded** from v0.1:
+**Always read first (< 5 min total):**
+1. `docs/PROGRESS.md` — current milestone, recent post-v0.1 changes, v0.2 scope.
+2. `pyproject.toml` — dependencies, tooling config, docpact self-config.
 
-- **Semantic mode** (`SEM` rule namespace). The entire LLM-based analysis subsystem. No semantic analyzer, no prompts, no API client integration. The `SEM` namespace prefix is allocated in the rule code convention but no rules of that prefix exist in v0.1.
-- **NumPy and Sphinx docstring parsers.** Only Google style ships in v0.1. The parser abstraction must remain in place so these can be added in v0.2+ without changing the rule engine.
-- **`pytest` plugin.** The `pytest` extra in `pyproject.toml` is declared but the plugin code itself is v0.2 work. The `docpact.testing` programmatic API ships in v0.1 instead.
-- **SARIF output.** v0.2 target. Only text and JSON in v0.1.
-- **`TY` rules** (ty cross-validation). v0.2 target.
-- **Heuristic rules** (`HEUR` namespace). Namespace allocated, no rules.
-- **Third-party rule plugin API.** Rules are internal to docpact in v0.1.
-- **Tier 4 automatic detection.** Tier 4 requires explicit configuration in v0.1.
-- **`format` subcommand.** Folded into `check --fix` in v0.1.
+**Read additionally based on task type:**
 
-If you find yourself implementing any of the above, stop. Either you have misread the spec or you have drifted into v0.2 work. Confirm with Ray before continuing.
+| Task | Also read |
+|---|---|
+| Adding or modifying a rule | Relevant spec section + existing rule file + its test file |
+| New config key or CLI option | spec §14–§16 |
+| Parser change | spec §8–§9 + ADR-001 |
+| Tier assignment change | spec §10.1 + ADR-003 — **stop and ask Ray first** |
+| Architecture change or new subsystem | Full spec + all ADRs — stop and ask Ray first |
+| Anything else | Start from the code; `PROJECT_STRUCTURE.md` for layout |
+
+Reading the full 1300-line spec before routine work is expensive and unnecessary.
+Reserve it for structural decisions.
 
 ---
 
 ## Architecture quick reference
-
-The full architecture is in spec §7. Summary:
 
 ```
 CLI (cli.py)
@@ -118,11 +72,11 @@ Python AST (stdlib `ast`) + griffe
 
 Key invariants:
 
-- **Rules are pure functions.** They receive `(FunctionInfo, ParsedDocstring | None, RuleConfig)` and return `list[RuleResult]`. They do not modify files, do not access global state, do not perform I/O.
-- **The model layer has no behavior.** `model/*.py` contains frozen dataclasses only. Methods beyond dataclass essentials do not belong there.
+- **Rules are pure functions.** `(FunctionInfo, ParsedDocstring | None, RuleConfig) → list[RuleResult]`. No I/O, no global state, no file mutation.
+- **The model layer has no behavior.** `model/*.py` is frozen dataclasses only.
 - **The parser is the only place that touches griffe and `ast`.** All downstream code operates on model types.
 - **Tier assignment is deterministic.** Same input, same output. See ADR-003 and spec §10.1.
-- **Error codes are stable API.** Once a code is shipped, it never changes meaning or gets reused. See spec §18.1.
+- **Error codes are stable API.** Once a code is shipped, it never changes meaning and is never reused. See spec §18.1.
 
 ---
 
@@ -130,65 +84,79 @@ Key invariants:
 
 ### Dogfooding
 
-docpact's own code should pass its own checks. Once enough of the tool exists to run on itself, add it to the pre-commit hook for this repo. Stub docstrings already in the skeleton mostly conform; new code must also conform.
+docpact's own source passes its own checks on every CI run (`docpact check src/`).
+All new code must conform. Suppressions require a `-- reason`.
 
 ### One rule per file
 
-Rules live in `src/docpact/rules/<namespace>/<code_lowercase>_<descriptive_slug>.py`. Each file exports one rule via the `@register(RuleMetadata(...))` decorator. No central rule catalog to keep in sync.
+Rules live in `src/docpact/rules/<namespace>/<code_lowercase>_<descriptive_slug>.py`.
+Each file exports one rule via `@register(RuleMetadata(...))`. No central catalog to sync.
 
 ### Tests alongside implementation, not after
 
-When you implement `rules/doc/doc007_param_mismatch.py`, you also create `tests/test_rules/test_doc007.py` in the same change. Tests are not a separate phase. A change is incomplete without them.
+When you implement a rule, you also create its test file in the same change.
+Tests are not a separate phase. A change without tests is incomplete.
 
 ### Tests are additive
 
-Don't modify existing passing tests unless their contract genuinely changes. Add new test classes or functions for new coverage. A future agent session has no memory of prior work — the test suite is the persistent record of what invariants must hold. If a future session could miss an invariant without the test, the test stays.
+Don't modify existing passing tests unless their contract genuinely changes.
+The test suite is the persistent record of what invariants must hold — a future
+agent session has no memory of prior work.
 
 ### Fixtures are real Python files
 
-Test fixtures live in `tests/fixtures/` as actual `.py` files demonstrating specific cases. Each fixture is minimal and self-contained. Do not embed Python source as triple-quoted strings in test files except for one-off cases that are not worth a fixture.
+Test fixtures live in `tests/fixtures/` as actual `.py` files. Do not embed
+Python source as triple-quoted strings in test files except for one-off cases
+not worth a fixture file.
 
 ### Reproducibility
 
-Configuration is deterministic. Tier assignment is deterministic. Rule output is deterministic. If a result depends on file ordering, environment variables, or wall-clock time, that is a bug.
+Configuration, tier assignment, and rule output are all deterministic. A result
+that depends on file ordering, environment variables, or wall-clock time is a bug.
 
 ### No imports of analyzed code
 
-docpact must never `import` the code it is analyzing. All analysis is static. This is non-negotiable — agents will eventually run docpact on code with arbitrary side effects, and importing would execute those side effects.
+docpact must never `import` the code it analyzes. All analysis is static via AST.
+Non-negotiable — agents run docpact on code with arbitrary side effects.
 
 ### Use Python 3.12+ features where they help
 
-`type X = ...` aliases, PEP 695 generics, `match` statements where they improve clarity. Do not avoid modern syntax out of caution; the floor is 3.12.
+`type X = ...` aliases, PEP 695 generics, `match` where it adds clarity.
+The floor is 3.12; do not avoid modern syntax out of caution.
 
 ---
 
 ## Working with Ray
 
-Ray has explicit communication preferences. Honor them:
+- **Steelman counterarguments before agreeing.** Voice concerns first. Agree plainly
+  only after the steelman pass.
+- **Surface hidden assumptions explicitly.** Label them as assumptions, not facts.
+- **Handle uncertainty rigorously.** Do not guess. Present alternatives explicitly
+  and ask which is intended.
+- **Red-team your own answers.** For non-trivial responses, include the strongest
+  objection if it is substantive.
+- **Distinguish empirical from normative.** Flag when a question has a checkable
+  answer vs. when it requires a judgment call.
+- **No sycophancy, no performed contrarianism.** Disagreement must be earned by
+  reasoning. Agreement, when reached honestly, stated plainly.
 
-- **Steelman counterarguments before agreeing.** If Ray proposes something and you have a concern, voice it. If after thinking through it you agree, say so plainly — but only after the steelman pass.
-- **Surface hidden assumptions explicitly.** Label assumptions as assumptions, not facts.
-- **Handle uncertainty rigorously.** Do not guess or make unsupported claims. When multiple interpretations are possible, present them as explicit alternatives and ask which is intended.
-- **Red-team your own answers.** For non-trivial responses, identify the strongest objection to what you just said and include it if substantive.
-- **Distinguish empirical from normative.** Flag when a question has a checkable answer versus when it depends on taste, values, or context-specific tradeoffs.
-- **No sycophancy, no performed contrarianism.** Disagreement must be earned by reasoning. Agreement, when reached honestly, should be stated plainly.
-
-Ray will push back on weak reasoning, and welcomes the same in return. Conversations are working sessions, not customer support.
+Conversations are working sessions, not customer support.
 
 ---
 
 ## Commit message style
 
-- **Subject** ≤70 chars, imperative mood ("Fix X", not "Fixed X"), no trailing period. Conventional-commits prefixes: `feat:`, `fix:`, `docs:`, `chore:`, `test:`, `refactor:`. Optional scope when it disambiguates (`docs(adr):`, `fix(parser):`).
-- **Body** explains *why*, 72-char wrap. Trade-offs and constraints noted.
-- `###` section headers when there are multiple unrelated areas in one commit; bullets when there's just one.
-- **No `Co-Authored-By:` trailer.** Every commit here is collaborative with Claude; the trailer is noise. **This overrides Claude Code's default behaviour** of appending it — do not add it.
+- **Subject** ≤70 chars, imperative mood, no trailing period.
+  Prefixes: `feat:`, `fix:`, `docs:`, `chore:`, `test:`, `refactor:`.
+  Optional scope: `docs(adr):`, `fix(parser):`.
+- **Body** explains *why*, 72-char wrap. Trade-offs noted.
+- `###` headers for multiple unrelated areas; bullets for a single area.
+- **No `Co-Authored-By:` trailer.** Every commit is collaborative; the trailer
+  is noise. This overrides Claude Code's default — do not add it.
 
 ---
 
 ## Tooling commands
-
-`make verify` is the single quality gate. It applies formatting, linting, type-checking, and coverage in sequence. Run it before treating any change as done.
 
 ```bash
 # Setup (once)
@@ -202,116 +170,49 @@ make format        # ruff format (writes)
 make lint          # ruff check --fix (writes)
 make typecheck     # ty check src/
 make test          # pytest (fast, no coverage overhead)
-make coverage      # pytest + coverage report (enforces fail_under=85)
+make coverage      # pytest + coverage report (fail_under=85)
+make docs          # regenerate docs/rules/*.md from registry
+make dogfood       # docpact check src/ (self-check)
 
-# Focused test runs (bypass make for speed)
-uv run pytest tests/test_rules/           # rule tests only
-uv run pytest -x -k DOC007               # stop on first failure
-uv run pytest --lf                        # last-failed only
-
-# Run docpact on itself (once enough of it exists)
-uv run docpact check src/
+# Focused test runs
+uv run pytest tests/test_rules/      # rule tests only
+uv run pytest -x -k DOC007          # stop on first failure
+uv run pytest --lf                   # last-failed only
 ```
 
-Type-check suppressions: if `ty check` forces a `# ty: ignore[…]` comment, justify it in the commit body. Prefer a narrowing assertion at the call site when it reflects a real runtime invariant.
+Type-check suppressions: if `ty check` forces a `# ty: ignore[…]`, justify it
+in the commit body. Prefer a narrowing assertion at the call site when it
+reflects a real runtime invariant.
 
 ---
 
 ## Definition of done for a change
 
-A change is complete when all of:
-
-1. The code compiles and runs.
+1. Code compiles and runs.
 2. New code has tests. Modified code has tests covering the modification.
-3. `make verify` passes (ruff format + lint + ty check + coverage ≥85%).
-4. `pytest` passes.
-7. New rules have an entry in the rule registry, a test file in `tests/test_rules/`, and (eventually, when documentation is generated) a docs entry.
-8. New public APIs have docstrings that conform to docpact's own schema.
-9. If the change introduces a non-trivial decision not already covered by the spec or an ADR, a new ADR is drafted and proposed.
-
----
-
-## Implementation order (suggested)
-
-This is a recommendation, not a mandate. Adjust if you have a better-grounded reason.
-
-**Phase 1 — Parser and model:**
-1. `parser/source.py` — extract `FunctionInfo` from a Python file using stdlib `ast`.
-2. `parser/docstring.py` — implement `GoogleParser` backed by griffe.
-3. Validation: small fixture file → parser → printed `FunctionInfo` and `ParsedDocstring`. Visual sanity check.
-
-**Phase 2 — Tier and registry:**
-4. `tiers.py` — implement `assign_tier` per spec §10.1.
-5. Tests for tier assignment covering every rule in §10.1.
-6. Verify `rules/_registry.py` works end-to-end with at least one stub rule that registers cleanly.
-
-**Phase 3 — First rules:**
-7. `DOC001` (missing docstring) with safe fix that inserts a stub.
-8. `DOC007` (param mismatch) with safe fix.
-9. End-to-end CLI: `docpact check fixture.py` produces correct text output.
-
-**Phase 4 — Configuration:**
-10. `config.py` — pyproject.toml / docpact.toml loading with all spec §14 keys.
-11. Wire config into rule selection and tier overrides.
-
-**Phase 5 — Fix engine:**
-12. Apply fixes in-place. Conflict detection (no overlapping ranges).
-13. `--fix` and `--unsafe-fixes` flags.
-14. `--diff` flag for dry-run.
-
-**Phase 6 — Output:**
-15. JSON output format with stable schema.
-16. Suppression handling (`# noqa: CODE`).
-
-**Phase 7 — Remaining rules:**
-17. `DOC012`, `DOC013`, `DOC014`, `DOC050`, `DOC051`, `DOC098`, `DOC099`.
-18. `MCP001`, `MCP002`.
-19. `FIX001`.
-
-**Phase 8 — Supporting commands:**
-20. `generate` (stub emission).
-21. `show-schema` (tier requirements display).
-22. `list-rules`.
-
-**Phase 9 — Testing API:**
-23. `docpact.testing` public functions.
-
-**Phase 10 — Polish:**
-24. Pre-commit hook configuration in repo.
-25. Documentation page generation per rule code.
-26. Self-application (dogfooding) on docpact's own source.
-
-After Phase 3 the tool is minimally useful (catches the highest-value violations). After Phase 7 v0.1 is feature-complete. Phases 8-10 finish the release.
-
----
-
-## ADR process
-
-ADRs are how this project records significant design decisions. The process is documented in `docs/adr/README.md`. Summary:
-
-- A decision warrants an ADR if it is hard to reverse, has cross-cutting consequences, or competent engineers might reasonably disagree on the answer.
-- ADRs are numbered sequentially. Numbers are never reused.
-- Use `docs/adr/template.md` as the starting point.
-- Status moves through `Proposed → Accepted → (eventually) Superseded by ADR-NNN`.
-- Once accepted, ADRs are not edited in place. Material changes require a new ADR.
-
-When in doubt about whether to write an ADR, ask Ray.
+3. `make verify` passes (format + lint + ty + coverage ≥85% + dogfood).
+4. New rules have a test file in `tests/test_rules/` and a regenerated entry in
+   `docs/rules/` (`make docs`).
+5. New public APIs have docstrings that conform to docpact's own schema.
+6. Non-trivial decisions not covered by the spec or an existing ADR have a new
+   ADR drafted and proposed to Ray.
 
 ---
 
 ## What to stop and ask before doing
 
-Some decisions belong to Ray, not to you. Stop and ask before:
+- **Modifying the spec.** It is the contract. Raise ambiguities explicitly rather
+  than picking an interpretation silently.
+- **Adding a dependency to `pyproject.toml`.** Every dep is a long-term commitment.
+- **Introducing a new architectural pattern.** Needs an ADR and Ray's sign-off.
+- **Reordering or renaming error codes.** Stable API — once shipped, never reused.
+- **Adding features beyond the current scope.** See `docs/PROGRESS.md` for what
+  is in and out of scope for the current milestone.
+- **Changing tier assignment rules.** Deterministic by design. See ADR-003.
+- **Changing the file structure.** Documented in `PROJECT_STRUCTURE.md`.
 
-- **Modifying the specification.** The spec is the contract. Implementation decisions follow it; they do not change it. If the spec is ambiguous or wrong, raise that explicitly rather than picking an interpretation silently.
-- **Adding a new dependency to `pyproject.toml`.** Every dependency is a long-term commitment. Justify before adding.
-- **Introducing a new architectural pattern.** The architecture is described in spec §7 and the ADRs. Departures need their own ADR and Ray's sign-off.
-- **Reordering or renaming error codes.** Codes are stable API. Once shipped, never reused. See spec §18.1 and ADR-004 (planned).
-- **Adding features beyond v0.1 scope** (see "Out of scope" above).
-- **Changing tier assignment rules.** Tier rules are deterministic by design. See ADR-003.
-- **Changing the file structure.** Layout is documented in `PROJECT_STRUCTURE.md`. Deviation needs justification.
-
-Don't ask permission for routine implementation work — write code, write tests, run the lint/test combo, propose changes. Stop only at the boundaries above.
+Don't ask permission for routine work — write code, write tests, run `make verify`.
+Stop only at the boundaries above.
 
 ---
 
@@ -320,69 +221,65 @@ Don't ask permission for routine implementation work — write code, write tests
 ### Adding a new rule
 
 1. Create `src/docpact/rules/<namespace>/<code>_<slug>.py`.
-2. Implement the rule function with `@register(RuleMetadata(...))`.
-3. Add a test file `tests/test_rules/test_<code>.py` covering positive cases, negative cases, fix behavior (if fixable), and suppression behavior.
-4. Add fixtures to `tests/fixtures/` if needed.
-5. Update `tests/test_rules/test_registry.py` to verify the rule registers cleanly (likely already automatic once the registry is implemented).
-6. Update the rules listing in the docs (if generated) or in the spec's example output.
-7. Run the full check.
+2. Implement with `@register(RuleMetadata(...))`.
+3. Add `tests/test_rules/test_<code>.py` — positive, negative, fix, suppression cases.
+4. Add fixtures to `tests/fixtures/` if the test benefits from a real file.
+5. Run `make docs` to regenerate `docs/rules/<CODE>.md`.
+6. Run `make verify`.
 
 ### Adding a test fixture
 
-Fixtures live in `tests/fixtures/`. Organize by what they demonstrate: `tier3_missing_constraints.py`, `mcp_decorator_docstring_conflict.py`, etc. Each fixture is a minimal, self-contained Python file.
-
-Fixtures are excluded from ruff and from docpact's self-application (see `pyproject.toml` per-file-ignores).
+Fixtures live in `tests/fixtures/`. Name by what they demonstrate:
+`tier3_missing_constraints.py`, `mcp_decorator_conflict.py`.
+Fixtures are excluded from ruff and from docpact's self-check (see `pyproject.toml`).
 
 ### Updating the spec (rare)
 
-If the spec needs to change, do not edit `docs/spec/docpact-spec.md` directly. Open the question with Ray. Spec changes are deliberate, not incremental. Bump the spec version in the header when changes are accepted.
+Do not edit `docs/spec/docpact-spec.md` directly. Open the question with Ray.
+Bump the spec version in the header when changes are accepted.
 
 ---
 
 ## Inbox — unsorted user notes
 
-The user captures quick thoughts (from phone or mid-session) as GitHub
-issues with the **`inbox`** label. These are pre-triage: a one-line
-remark to revisit, not a bug report and not a phase.
+Quick thoughts are captured as GitHub issues with the `inbox` label.
+Pre-triage: one-line remarks to revisit, not bug reports.
 
-**Lifecycle:** open → resolved by either rejection (closed with a
-comment explaining why) or promotion to the backlog / a future phase
-(closed with a comment linking the relevant work + commit).
-Closed issues stay searchable; they are the historical record of
-"things considered but not done."
+**Lifecycle:** open → rejected (closed with reason) or promoted (closed with
+link to the relevant work + commit).
 
-**Use the `gh` CLI for all of it — never the GitHub web UI:**
+**Use `gh` CLI — never the GitHub web UI:**
 
 | Action | Command |
 |---|---|
 | List open inbox items | `gh issue list --label inbox --state open` |
-| Capture mid-session (when the user says "inbox: …" or "remember: …") | `gh issue create --label inbox --title "[inbox] <first 60 chars>" --body "<full text>"` |
+| Capture (when Ray says "inbox: …" or "note for later: …") | `gh issue create --label inbox --title "[inbox] <60 chars>" --body "<full text>"` |
 | Reject | `gh issue close <#> --comment "rejected: <reason>"` |
-| Promote to future work | `gh issue close <#> --comment "promoted to <phase/ADR/issue> — see <commit>"` |
+| Promote | `gh issue close <#> --comment "promoted to <phase/ADR> — see <commit>"` |
 
-**When to check the inbox:** on demand only. Do **not** auto-list at
-session start — it's noise. Check when Ray asks ("what's in the inbox?",
-"any open notes?") or when starting unstructured work where inbox items
-might be relevant.
+Check on demand only — not at session start. When Ray says "inbox: X", create the
+issue immediately and acknowledge in one sentence without breaking flow.
 
-**Capture phrasing:** when Ray says *"inbox: X"*, *"remember: X"*, or
-*"note for later: X"* mid-session, create the issue immediately and
-acknowledge in one sentence (`Captured as #N. Back to <current task>.`)
-without breaking flow. Don't ask for confirmation.
+---
 
-The issue template at `.github/ISSUE_TEMPLATE/inbox.yml` makes phone
-capture friction-minimal — one field, label preset.
+## ADR process
+
+- A decision warrants an ADR if it is hard to reverse, has cross-cutting
+  consequences, or competent engineers might reasonably disagree.
+- ADRs are numbered sequentially. Numbers are never reused.
+- Use `docs/adr/template.md` as the starting point.
+- Status: `Proposed → Accepted → (eventually) Superseded by ADR-NNN`.
+- Accepted ADRs are not edited in place. Material changes need a new ADR.
+
+When in doubt about whether to write one, ask Ray.
 
 ---
 
 ## When stuck
 
-If you genuinely cannot proceed:
-
 1. Re-read the relevant spec section.
 2. Re-read the relevant ADR.
-3. Check whether the question is empirical (look it up, test it, measure it) or normative (requires a decision).
-4. If normative, ask Ray with the alternatives stated as explicit options.
-5. If empirical, find the answer and proceed.
+3. Empirical question (checkable)? Find the answer and proceed.
+4. Normative question (requires a decision)? Ask Ray with alternatives stated.
 
-Do not silently pick an interpretation and hope it is right. Surfacing ambiguity is part of the work.
+Do not silently pick an interpretation and hope it is right.

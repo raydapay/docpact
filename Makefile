@@ -1,4 +1,4 @@
-.PHONY: help install format format-check lint lint-check typecheck test coverage verify docs dogfood
+.PHONY: help install format format-check lint lint-check typecheck test coverage verify docs docs-check dogfood
 
 # Default target
 help:
@@ -11,8 +11,9 @@ help:
 	@echo "  make typecheck      Run static type analysis using ty"
 	@echo "  make test           Run pytest (fast, no coverage)"
 	@echo "  make coverage       Run pytest with coverage (fail_under=85)"
-	@echo "  make verify         Full pipeline: format → lint → typecheck → coverage"
+	@echo "  make verify         Full pipeline: format → lint → typecheck → coverage → dogfood"
 	@echo "  make docs           Generate docs/rules/*.md from the rule registry"
+	@echo "  make docs-check     Verify docs/rules/*.md matches registry (CI gate)"
 	@echo "  make dogfood        Run docpact on its own source (self-check)"
 
 install:
@@ -42,6 +43,10 @@ coverage:
 
 docs:
 	uv run python scripts/generate_rule_docs.py
+
+docs-check:
+	uv run python scripts/generate_rule_docs.py
+	git diff --exit-code docs/rules/
 
 dogfood:
 	uv run docpact check src/

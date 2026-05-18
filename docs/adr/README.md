@@ -19,15 +19,16 @@ ADRs exist alongside the [specification](../spec/docpact-spec.md), not as a subs
 | [001](ADR-001-implementation-language.md) | Implementation language for v0.1 | Accepted | Python 3.12+ with griffe. Hot-path rewrite to Rust via PyO3 reserved as future optimization. |
 | [002](ADR-002-docstring-format-baseline.md) | Docstring format baseline | Accepted | Google style only in v0.1. NumPy in v0.2 via parser abstraction. Sphinx not on roadmap. |
 | [003](ADR-003-tier-assignment.md) | Tier assignment by context, not configuration | Accepted | Tiers derived from decorators, naming, and class membership. Per-file overrides exist but are visible in config. |
+| [004](ADR-004-suppression-syntax.md) | Inline suppression comment syntax | Accepted | `# nodo: CODE` as docpact's own marker, configurable via `suppress_comment`. Avoids ruff `# noqa` namespace collision. |
 
 ## Planned ADRs
 
-These decisions are made in the specification but warrant their own ADR for full rationale capture. To be written as implementation begins.
+These decisions are made in the specification but warrant their own ADR for full rationale capture.
 
 | # | Title | Status |
 |---|---|---|
-| 004 | Error code stability commitment | Planned |
-| 005 | MCP decorator and docstring section mutual exclusion | Planned |
-| 006 | Constraints section scope (real-world vs. type-expressible) | Planned |
-| 007 | Heuristic rule namespace and severity model | Planned |
-| 008 | Configuration file precedence (pyproject.toml vs. docpact.toml) | Planned |
+| 005 | Error code stability commitment | Planned |
+| 006 | MCP decorator and docstring section mutual exclusion | Planned |
+| 007 | Constraints section scope (real-world vs. type-expressible) | Planned |
+| 008 | Heuristic rule namespace and severity model | Planned |
+| 009 | Configuration file precedence (pyproject.toml vs. docpact.toml) | Planned |

@@ -38,3 +38,8 @@ jobs:
 
       - name: docpact self-check
         run: uv run docpact check src/
+
+      - name: rule docs up to date
+        run: |
+          uv run python scripts/generate_rule_docs.py
+          git diff --exit-code docs/rules/

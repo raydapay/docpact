@@ -7,7 +7,52 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**Phase 10 complete. v0.1 implementation is done.**
+**v0.1 complete. Codebase is self-hosting.**
+
+Active: maintenance, v0.2 planning. See "Recent changes" and "v0.2 scope" below.
+
+---
+
+## Recent changes (post-v0.1)
+
+### suppress_comment / # nodo — 2026-05-18
+
+Commits: `db3ae18`, `4c5c8f1`
+
+- Introduced `# nodo: CODE` as docpact's own suppression syntax.
+  Replaces `# noqa: CODE` to eliminate conflict with ruff's RUF100, which
+  silently strips unknown `# noqa` codes from source files on auto-fix.
+- Configurable via `suppress_comment = ["nodo"]` in `[tool.docpact]`. Accepts
+  a list — `["nodo", "noqa"]` matches both during a migration period.
+- `ruff external = [...]` removed from the project's own `pyproject.toml`.
+- FIX001 summary and messages updated to be marker-agnostic.
+- ADR-004 written to record the decision.
+- **Footgun:** suppression must be on the `def` line. Placement on `) -> None:`
+  looks valid but is silently ignored — `func.line` is the `def` keyword line.
+  ruff's formatter moves trailing comments to `) -> None:` when it wraps
+  signatures; use `def foo(  # nodo: CODE` (after the opening paren) instead.
+
+---
+
+## v0.2 scope (planned)
+
+Items explicitly deferred from v0.1 (spec §5.3 and §5.4):
+
+- **pytest plugin** — `docpact[pytest]` extra declared, plugin not implemented.
+  `docpact.testing` programmatic API covers v0.1 testing needs; plugin is a
+  layer on top.
+- **NumPy docstring parser** — parser abstraction is in place; add the parser,
+  wire it to `format = "numpy"` config.
+- **Sphinx docstring parser** — lower priority than NumPy; not on roadmap yet.
+- **SARIF output** — `--format sarif`. Only text and JSON in v0.1.
+- **TY rules** — ty cross-validation namespace. Allocated, no rules.
+- **HEUR rules** — heuristic namespace. Allocated, no rules.
+- **Third-party rule plugin API** — rules are internal in v0.1.
+- **Tier 4 automatic detection** — explicit config-only in v0.1.
+- **Semantic mode** (`SEM` namespace) — LLM-based analysis. No code, no prompts,
+  no API client. Entire subsystem absent from v0.1.
+- **DOC050** (Pydantic field missing description) and **DOC098** (doctest exception)
+  — registered stubs; need class-level analysis and `--doctest` flag respectively.
 
 ---
 
@@ -81,8 +126,10 @@ Commit: `cce438e`
   `{"version":"1", "diagnostics":[...], "summary":{...}}`; each diagnostic
   includes fixable/unsafe_fixable flags and cwd-relativised path.
 - `src/docpact/suppress.py` — `parse_suppressions`, `is_suppressed`,
-  `apply_suppressions`; bare `# noqa` suppresses all codes; filters after
-  rules run and before output/exit-code evaluation.
+  `apply_suppressions`; bare suppression comment suppresses all codes; filters
+  after rules run and before output/exit-code evaluation.
+  (Note: initially used `# noqa` syntax; migrated to `# nodo` post-v0.1 — see
+  "Recent changes" above.)
 - CLI: `--format json` wired; `_run_checks` returns per-file suppression
   maps; `visible` filtered list used for output and exit code.
 - 273 tests, 97% coverage.
@@ -102,8 +149,8 @@ Commit: `394e0c5`
 - `DOC099`: unfilled `[FILL]` stub marker.
 - `MCP001`: both decorator `description=` and docstring `MCP:` section
   present. Detection only; section-removal fix deferred.
-- `FIX001`: bare `# noqa` without specific codes. Line-level rule wired
-  into `_run_checks` via `check_bare_noqa`.
+- `FIX001`: bare inline suppression comment without specific codes. Line-level
+  rule wired into `_run_checks` via `check_bare_noqa`.
 - `DOC050`, `DOC098`: registered stubs. DOC050 needs class-level analysis
   (Phase 8). DOC098 needs `--doctest` flag.
 - 361 tests, 97% coverage.
@@ -144,7 +191,7 @@ Commit: `fbca22a`
   registered rule from live registry metadata. `make docs` runs it.
 - Dogfooding: `uv run docpact check src/` exits 0. Fixed 50 violations across
   20 source files: summary docstrings for helper functions, Args + Returns for
-  all rule `check()` functions, `# noqa: DOC012` for CLI command functions
-  (args documented by click), `# noqa: DOC099` for functions that describe
+  all rule `check()` functions, `# nodo: DOC012` for CLI command functions
+  (args documented by click), `# nodo: DOC099` for functions that describe
   `[FILL]` markers in explanatory prose.
 - `make dogfood` target added for ongoing self-check.
