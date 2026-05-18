@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Rule modules must be imported before the registry is populated.
 import docpact.rules.doc.doc001_missing_docstring  # noqa: F401, E402
+import docpact.rules.doc.doc002_module_docstring  # noqa: F401, E402
 import docpact.rules.doc.doc007_param_mismatch  # noqa: F401, E402
 import docpact.rules.doc.doc012_missing_section  # noqa: F401, E402
 import docpact.rules.doc.doc013_noncanonical_empty  # noqa: F401, E402
@@ -88,7 +89,7 @@ def _page(code: str, meta: object) -> str:
         "Or suppressed inline:",
         "",
         "```python",
-        f"def my_function():  # noqa: {code}",
+        f"def my_function(  # nodo: {code} -- reason",
         "    ...",
         "```",
         "",
