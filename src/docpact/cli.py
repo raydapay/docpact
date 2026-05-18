@@ -20,6 +20,7 @@ import click
 
 import docpact.rules.doc.doc001_missing_docstring
 import docpact.rules.doc.doc002_module_docstring
+import docpact.rules.doc.doc003_class_docstring
 import docpact.rules.doc.doc007_param_mismatch
 import docpact.rules.doc.doc012_missing_section
 import docpact.rules.doc.doc013_noncanonical_empty
@@ -38,6 +39,7 @@ from docpact.parser.docstring import GoogleParser
 from docpact.parser.source import extract_functions
 from docpact.rules._registry import RuleConfig, all_rules
 from docpact.rules.doc.doc002_module_docstring import check_module_docstring
+from docpact.rules.doc.doc003_class_docstring import check_class_docstrings
 from docpact.rules.fix.fix001_bare_noqa import check_bare_noqa
 from docpact.rules.fix.fix002_no_reason import check_no_reason
 from docpact.suppress import apply_suppressions, parse_suppressions
@@ -114,13 +116,22 @@ def _run_checks(
                 cfg = RuleConfig(severity=severity, options={})
                 results.extend(check_module_docstring(source_text, file_path, cfg))
 
+        if "DOC003" in rules:
+            doc003_meta, _ = rules["DOC003"]
+            if rule_is_enabled("DOC003", "DOC", config.select, config.ignore) and rule_is_enabled(
+                "DOC003", "DOC", ("DOC", "MCP", "FIX"), extra_ignores
+            ):
+                severity = config.rule_severities.get("DOC003", doc003_meta.default_severity)
+                cfg = RuleConfig(severity=severity, options={})
+                results.extend(check_class_docstrings(source_text, file_path, cfg))
+
         functions = extract_functions(file_path)
         for func in functions:
             doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
             tier = assign_tier(func, config.tier_overrides)
             config_options: dict[str, object] = {"tier": tier}
             for meta, rule_fn in rules.values():
-                if meta.code in {"FIX001", "FIX002", "DOC002"}:
+                if meta.code in {"FIX001", "FIX002", "DOC002", "DOC003"}:
                     continue  # handled above as file-level rules
                 if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
                     continue
