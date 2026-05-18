@@ -189,6 +189,28 @@ def test_format_summary_plural(tmp_path: Path) -> None:
     assert "2 errors" in format_summary([_result(f), _result(f, "DOC007")])
 
 
+def test_format_summary_warning_only(tmp_path: Path) -> None:
+    f = tmp_path / "foo.py"
+    r = RuleResult(
+        code="DOC002",
+        severity=Severity.WARNING,
+        message="msg",
+        location=_loc(f),
+    )
+    s = format_summary([r])
+    assert "1 warning" in s
+    assert "error" not in s
+
+
+def test_format_summary_mixed_errors_and_warnings(tmp_path: Path) -> None:
+    f = tmp_path / "foo.py"
+    err = _result(f, "DOC001")
+    warn = RuleResult(code="DOC002", severity=Severity.WARNING, message="msg", location=_loc(f))
+    s = format_summary([err, warn])
+    assert "1 error" in s
+    assert "1 warning" in s
+
+
 def test_format_summary_fixable(tmp_path: Path) -> None:
     f = tmp_path / "foo.py"
     r = _result(f, fix=_fix(f))

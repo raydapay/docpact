@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from docpact.config import load_config
-from docpact.parser.docstring import GoogleParser
+from docpact.parser.docstring import GoogleParser, NumpyParser
 from docpact.parser.source import extract_functions
 from docpact.tiers import assign_tier
 
@@ -24,6 +24,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from docpact.model.function_info import FunctionInfo
+
+
+def _parser_for(info: FunctionInfo) -> GoogleParser | NumpyParser:
+    """Return the parser configured for the file containing info."""
+    config = load_config(info.file_path.parent)
+    return NumpyParser() if config.docstring_format == "numpy" else GoogleParser()
 
 
 def _qualname(func: Callable[..., object]) -> str:
@@ -116,7 +122,7 @@ def assert_section_present(func: Callable[..., object], section_name: str) -> No
             f"{_qualname(func)!r} has no docstring — cannot check for section {section_name!r}."
         )
 
-    doc = GoogleParser().parse(info.docstring_raw)
+    doc = _parser_for(info).parse(info.docstring_raw)
     section = doc.sections.get(section_name)
     if section is None:
         raise AssertionError(f"{_qualname(func)!r} docstring is missing section {section_name!r}.")
@@ -157,7 +163,7 @@ def assert_params_match_signature(func: Callable[..., object]) -> None:
     if info.docstring_raw is None:
         return  # No docstring — nothing to check.
 
-    doc = GoogleParser().parse(info.docstring_raw)
+    doc = _parser_for(info).parse(info.docstring_raw)
     args_section = doc.sections.get("Args")
     if args_section is None:
         return  # No Args section — nothing to check.
@@ -209,7 +215,7 @@ def assert_mcp_schema_from_docstring(
     if info.docstring_raw is None:
         raise AssertionError(f"{_qualname(func)!r} has no docstring — cannot derive MCP schema.")
 
-    doc = GoogleParser().parse(info.docstring_raw)
+    doc = _parser_for(info).parse(info.docstring_raw)
 
     # Description: prefer the MCP section body, fall back to summary.
     mcp_section = doc.sections.get("MCP")

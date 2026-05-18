@@ -1,14 +1,14 @@
 """Output formatters.
 
-Diagnostics are emitted in one of two formats in v0.1: text (human-readable)
-or JSON (machine-readable). SARIF is planned for v0.2.
+Diagnostics are emitted in three formats: text (human-readable), JSON
+(machine-readable), and SARIF 2.1.0 (static-analysis interchange).
 
 All formatters consume the same list[RuleResult] input. The CLI selects
 the formatter based on --format.
 
 Why a single module rather than text.py / json.py / sarif.py:
-    At three small functions the split would be premature. When SARIF lands
-    in v0.2, splitting into submodules at that point is the natural trigger.
+    At three small functions the split would be premature. If a fourth
+    formatter lands, that is the natural trigger to split.
 """
 
 from __future__ import annotations
@@ -20,9 +20,30 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from docpact.model.diagnostic import RuleResult
+    from docpact.model.diagnostic import RuleResult, Severity
 
 _JSON_VERSION = "1"
+_SARIF_SCHEMA = (
+    "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
+)
+
+
+def _sarif_level(severity: Severity) -> str:
+    """Map a docpact Severity to a SARIF level string.
+
+    Args:
+        severity: The severity value to convert.
+
+    Returns:
+        One of "error", "warning", or "note".
+    """
+    from docpact.model.diagnostic import Severity as S
+
+    if severity == S.ERROR:
+        return "error"
+    if severity == S.WARNING:
+        return "warning"
+    return "note"
 
 
 def format_text(results: list[RuleResult], cwd: Path | None = None) -> str:
@@ -109,8 +130,99 @@ def format_json(results: list[RuleResult], cwd: Path | None = None) -> str:
     return json.dumps(doc, indent=2)
 
 
+def format_sarif(results: list[RuleResult], cwd: Path | None = None) -> str:
+    """Format diagnostics as a SARIF 2.1.0 JSON document.
+
+    Produces a single-run SARIF document. The driver.rules array is
+    populated from the live rule registry. Artifact URIs are relative
+    (with uriBaseId "%SRCROOT%") when cwd is provided, absolute
+    file:// URIs otherwise.
+
+    Args:
+        results: Diagnostics to format, in any order.
+        cwd: Working directory used as the SARIF %SRCROOT% base. When
+            provided, file paths inside cwd become relative URIs and
+            originalUriBaseIds is populated. Paths outside cwd fall back
+            to absolute file:// URIs.
+
+    Returns:
+        SARIF 2.1.0 JSON string. Always valid JSON, even when results is
+        empty.
+    """
+    import importlib.metadata
+
+    from docpact.rules._registry import all_rules
+
+    try:
+        version = importlib.metadata.version("docpact")
+    except importlib.metadata.PackageNotFoundError:
+        version = "0.0.0"
+
+    rules_snapshot = all_rules()
+    driver_rules = [
+        {
+            "id": code,
+            "shortDescription": {"text": meta.summary},
+            "defaultConfiguration": {"level": _sarif_level(meta.default_severity)},
+        }
+        for code, (meta, _) in sorted(rules_snapshot.items())
+    ]
+
+    sarif_results = []
+    for r in results:
+        path = r.location.file_path
+        artifact: dict[str, str]
+        if cwd is not None:
+            try:
+                rel = path.relative_to(cwd)
+                artifact = {"uri": rel.as_posix(), "uriBaseId": "%SRCROOT%"}
+            except ValueError:
+                artifact = {"uri": path.as_uri()}
+        else:
+            artifact = {"uri": path.as_uri()}
+
+        sarif_results.append(
+            {
+                "ruleId": r.code,
+                "level": _sarif_level(r.severity),
+                "message": {"text": r.message},
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": artifact,
+                            # SARIF columns are 1-based; docpact stores 0-based.
+                            "region": {
+                                "startLine": r.location.line,
+                                "startColumn": r.location.column + 1,
+                            },
+                        }
+                    }
+                ],
+            }
+        )
+
+    run: dict[str, object] = {
+        "tool": {
+            "driver": {
+                "name": "docpact",
+                "version": version,
+                "rules": driver_rules,
+            }
+        },
+        "results": sarif_results,
+    }
+
+    if cwd is not None:
+        run["originalUriBaseIds"] = {"%SRCROOT%": {"uri": cwd.absolute().as_uri() + "/"}}
+
+    return json.dumps(
+        {"version": "2.1.0", "$schema": _SARIF_SCHEMA, "runs": [run]},
+        indent=2,
+    )
+
+
 def format_summary(results: list[RuleResult]) -> str:
-    """Return the 'Found N errors (M fixable)' summary line.
+    """Return a summary line counting errors and warnings separately.
 
     Args:
         results: All collected diagnostics.
@@ -121,20 +233,28 @@ def format_summary(results: list[RuleResult]) -> str:
     if not results:
         return ""
 
-    n = len(results)
+    from docpact.model.diagnostic import Severity
+
+    errors = sum(1 for r in results if r.severity == Severity.ERROR)
+    warnings = sum(1 for r in results if r.severity == Severity.WARNING)
     fixable = sum(1 for r in results if r.fix is not None)
     unsafe = sum(1 for r in results if r.unsafe_fix is not None)
 
-    noun = "error" if n == 1 else "errors"
-    msg = f"Found {n} {noun}"
-
     parts: list[str] = []
-    if fixable:
-        parts.append(f"{fixable} fixable with --fix")
-    if unsafe:
-        parts.append(f"{unsafe} fixable with --unsafe-fixes")
+    if errors:
+        parts.append(f"{errors} {'error' if errors == 1 else 'errors'}")
+    if warnings:
+        parts.append(f"{warnings} {'warning' if warnings == 1 else 'warnings'}")
 
-    if parts:
-        msg += f" ({', '.join(parts)})"
+    msg = "Found " + ", ".join(parts)
+
+    fix_parts: list[str] = []
+    if fixable:
+        fix_parts.append(f"{fixable} fixable with --fix")
+    if unsafe:
+        fix_parts.append(f"{unsafe} fixable with --unsafe-fixes")
+    if fix_parts:
+        msg += f" ({', '.join(fix_parts)})"
+
     msg += "."
     return msg

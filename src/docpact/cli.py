@@ -18,25 +18,20 @@ from typing import TYPE_CHECKING
 
 import click
 
-import docpact.rules.doc.doc001_missing_docstring
-import docpact.rules.doc.doc002_module_docstring
-import docpact.rules.doc.doc003_class_docstring
-import docpact.rules.doc.doc007_param_mismatch
-import docpact.rules.doc.doc012_missing_section
-import docpact.rules.doc.doc013_noncanonical_empty
-import docpact.rules.doc.doc014_suspicious_param
-import docpact.rules.doc.doc050_pydantic_field
-import docpact.rules.doc.doc051_annotated_constraint
-import docpact.rules.doc.doc098_doctest_exception
-import docpact.rules.doc.doc099_fill_marker
-import docpact.rules.fix.fix001_bare_noqa
-import docpact.rules.fix.fix002_no_reason
-import docpact.rules.mcp.mcp001_decorator_docstring_conflict  # noqa: F401
-from docpact.config import Config, file_ignores_for, file_is_excluded, load_config, rule_is_enabled
+from docpact.config import (
+    Config,
+    file_ignores_for,
+    file_is_excluded,
+    load_config,
+    rule_is_enabled,
+    rule_is_file_ignored,
+)
 from docpact.fix import apply_fixes, diff_fixes
-from docpact.output import format_json, format_summary, format_text
+from docpact.model.diagnostic import Severity
+from docpact.output import format_json, format_sarif, format_summary, format_text
 from docpact.parser.docstring import GoogleParser, NumpyParser
 from docpact.parser.source import extract_functions
+from docpact.rules import load_builtin_rules
 from docpact.rules._registry import RuleConfig, all_rules
 from docpact.rules.doc.doc002_module_docstring import check_module_docstring
 from docpact.rules.doc.doc003_class_docstring import check_class_docstrings
@@ -45,6 +40,8 @@ from docpact.rules.fix.fix001_bare_noqa import check_bare_noqa
 from docpact.rules.fix.fix002_no_reason import check_no_reason
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
+
+load_builtin_rules()
 
 if TYPE_CHECKING:
     from docpact.model.diagnostic import RuleResult
@@ -84,58 +81,43 @@ def _run_checks(
         extra_ignores = file_ignores_for(file_path, config.per_file_ignores)
 
         # File-level rules: run once per file before function-level rules.
-        if "FIX001" in rules:
-            fix001_meta, _ = rules["FIX001"]
-            if rule_is_enabled("FIX001", "FIX", config.select, config.ignore) and rule_is_enabled(
-                "FIX001", "FIX", ("DOC", "MCP", "FIX"), extra_ignores
-            ):
-                severity = config.rule_severities.get("FIX001", fix001_meta.default_severity)
-                cfg = RuleConfig(severity=severity, options={})
-                results.extend(check_bare_noqa(source_text, file_suppressions, file_path, cfg))
-
-        if "FIX002" in rules:
-            fix002_meta, _ = rules["FIX002"]
-            if rule_is_enabled("FIX002", "FIX", config.select, config.ignore) and rule_is_enabled(
-                "FIX002", "FIX", ("DOC", "MCP", "FIX"), extra_ignores
-            ):
-                severity = config.rule_severities.get("FIX002", fix002_meta.default_severity)
-                cfg = RuleConfig(severity=severity, options={})
-                results.extend(
-                    check_no_reason(
-                        source_text,
-                        file_suppressions,
-                        file_path,
-                        cfg,
-                        markers=config.suppress_comment,
+        for code, namespace in (
+            ("FIX001", "FIX"),
+            ("FIX002", "FIX"),
+            ("DOC002", "DOC"),
+            ("DOC003", "DOC"),
+            ("DOC050", "DOC"),
+        ):
+            if code not in rules:
+                continue
+            meta, _ = rules[code]
+            if not rule_is_enabled(code, namespace, config.select, config.ignore):
+                continue
+            if rule_is_file_ignored(code, namespace, extra_ignores):
+                continue
+            severity = config.rule_severities.get(code, meta.default_severity)
+            if severity == Severity.OFF:
+                continue
+            cfg = RuleConfig(severity=severity, options={})
+            match code:
+                case "FIX001":
+                    results.extend(check_bare_noqa(source_text, file_suppressions, file_path, cfg))
+                case "FIX002":
+                    results.extend(
+                        check_no_reason(
+                            source_text,
+                            file_suppressions,
+                            file_path,
+                            cfg,
+                            markers=config.suppress_comment,
+                        )
                     )
-                )
-
-        if "DOC002" in rules:
-            doc002_meta, _ = rules["DOC002"]
-            if rule_is_enabled("DOC002", "DOC", config.select, config.ignore) and rule_is_enabled(
-                "DOC002", "DOC", ("DOC", "MCP", "FIX"), extra_ignores
-            ):
-                severity = config.rule_severities.get("DOC002", doc002_meta.default_severity)
-                cfg = RuleConfig(severity=severity, options={})
-                results.extend(check_module_docstring(source_text, file_path, cfg))
-
-        if "DOC003" in rules:
-            doc003_meta, _ = rules["DOC003"]
-            if rule_is_enabled("DOC003", "DOC", config.select, config.ignore) and rule_is_enabled(
-                "DOC003", "DOC", ("DOC", "MCP", "FIX"), extra_ignores
-            ):
-                severity = config.rule_severities.get("DOC003", doc003_meta.default_severity)
-                cfg = RuleConfig(severity=severity, options={})
-                results.extend(check_class_docstrings(source_text, file_path, cfg))
-
-        if "DOC050" in rules:
-            doc050_meta, _ = rules["DOC050"]
-            if rule_is_enabled("DOC050", "DOC", config.select, config.ignore) and rule_is_enabled(
-                "DOC050", "DOC", ("DOC", "MCP", "FIX"), extra_ignores
-            ):
-                severity = config.rule_severities.get("DOC050", doc050_meta.default_severity)
-                cfg = RuleConfig(severity=severity, options={})
-                results.extend(check_pydantic_fields(source_text, file_path, cfg))
+                case "DOC002":
+                    results.extend(check_module_docstring(source_text, file_path, cfg))
+                case "DOC003":
+                    results.extend(check_class_docstrings(source_text, file_path, cfg))
+                case "DOC050":
+                    results.extend(check_pydantic_fields(source_text, file_path, cfg))
 
         functions = extract_functions(file_path)
         for func in functions:
@@ -147,11 +129,11 @@ def _run_checks(
                     continue  # handled above as file-level rules
                 if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
                     continue
-                if not rule_is_enabled(
-                    meta.code, meta.namespace, ("DOC", "MCP", "FIX"), extra_ignores
-                ):
+                if rule_is_file_ignored(meta.code, meta.namespace, extra_ignores):
                     continue
                 severity = config.rule_severities.get(meta.code, meta.default_severity)
+                if severity == Severity.OFF:
+                    continue
                 cfg = RuleConfig(severity=severity, options=config_options)
                 results.extend(rule_fn(func, doc, cfg))
 
@@ -177,7 +159,7 @@ def main() -> None:
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["text", "json"]),
+    type=click.Choice(["text", "json", "sarif"]),
     default="text",
     help="Output format.",
 )
@@ -207,6 +189,9 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     cli_ignore: tuple[str, ...],
 ) -> None:
     """Check docstrings against the configured schema."""
+    if unsafe_fixes and not do_fix:
+        raise click.UsageError("--unsafe-fixes requires --fix")
+
     config = load_config(Path.cwd())
 
     if cli_select:
@@ -220,6 +205,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             per_file_ignores=config.per_file_ignores,
             tier_overrides=config.tier_overrides,
             rule_severities=config.rule_severities,
+            suppress_comment=config.suppress_comment,
         )
     if cli_ignore:
         config = Config(
@@ -232,6 +218,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             per_file_ignores=config.per_file_ignores,
             tier_overrides=config.tier_overrides,
             rule_severities=config.rule_severities,
+            suppress_comment=config.suppress_comment,
         )
 
     py_files = _collect_py_files(paths, config)
@@ -266,8 +253,11 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             click.echo(summary)
     elif output_format == "json":
         click.echo(format_json(visible, cwd=cwd))
+    elif output_format == "sarif":
+        click.echo(format_sarif(visible, cwd=cwd))
 
-    if visible and not exit_zero:
+    has_errors = any(r.severity == Severity.ERROR for r in visible)
+    if has_errors and not exit_zero:
         sys.exit(1)
 
 
@@ -290,6 +280,7 @@ def generate(  # nodo: DOC012 -- click params; Args section would duplicate --he
         per_file_ignores=config.per_file_ignores,
         tier_overrides=config.tier_overrides,
         rule_severities=config.rule_severities,
+        suppress_comment=config.suppress_comment,
     )
     py_files = _collect_py_files(paths, stub_config)
     results, suppressions = _run_checks(py_files, stub_config)

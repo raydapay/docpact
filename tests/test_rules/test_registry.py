@@ -1,27 +1,18 @@
-"""Tests for docpact.rules._registry — registration and lookup."""
+"""Tests for docpact.rules._registry and load_builtin_rules."""
 
 from __future__ import annotations
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Fixtures: import stub rule modules to trigger self-registration.
-# The stub functions raise NotImplementedError — that is intentional and
-# does not affect registry tests, which only exercise metadata and dispatch.
-# ---------------------------------------------------------------------------
-import docpact.rules.doc.doc001_missing_docstring
-import docpact.rules.doc.doc007_param_mismatch
-import docpact.rules.doc.doc012_missing_section
-import docpact.rules.doc.doc013_noncanonical_empty
-import docpact.rules.doc.doc014_suspicious_param
-import docpact.rules.doc.doc050_pydantic_field
-import docpact.rules.doc.doc051_annotated_constraint
-import docpact.rules.doc.doc098_doctest_exception
-import docpact.rules.doc.doc099_fill_marker
-import docpact.rules.fix.fix001_bare_noqa
-import docpact.rules.mcp.mcp001_decorator_docstring_conflict  # noqa: F401
 from docpact.model.diagnostic import Severity
+from docpact.rules import load_builtin_rules
 from docpact.rules._registry import RuleConfig, RuleMetadata, all_rules, register
+
+# ---------------------------------------------------------------------------
+# Ensure all built-in rules are loaded before tests that inspect the registry.
+# ---------------------------------------------------------------------------
+
+load_builtin_rules()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -42,33 +33,53 @@ def _test_meta(code: str) -> RuleMetadata:
 
 
 # ---------------------------------------------------------------------------
+# load_builtin_rules — all expected codes present
+# ---------------------------------------------------------------------------
+
+
+def test_all_builtin_rules_registered() -> None:
+    rules = all_rules()
+    expected = {
+        "DOC001",
+        "DOC002",
+        "DOC003",
+        "DOC007",
+        "DOC012",
+        "DOC013",
+        "DOC014",
+        "DOC050",
+        "DOC051",
+        "DOC098",
+        "DOC099",
+        "FIX001",
+        "FIX002",
+        "MCP001",
+        "TY001",
+        "TY002",
+    }
+    missing = expected - rules.keys()
+    assert not missing, f"Rules not registered: {sorted(missing)}"
+
+
+def test_load_builtin_rules_is_idempotent() -> None:
+    before = set(all_rules().keys())
+    load_builtin_rules()
+    load_builtin_rules()
+    assert set(all_rules().keys()) == before
+
+
+# ---------------------------------------------------------------------------
 # Basic registration
 # ---------------------------------------------------------------------------
 
 
-def test_stub_rules_are_registered() -> None:
-    rules = all_rules()
-    assert "DOC001" in rules
-    assert "DOC007" in rules
-    assert "DOC012" in rules
-    assert "DOC013" in rules
-    assert "DOC014" in rules
-    assert "DOC050" in rules
-    assert "DOC051" in rules
-    assert "DOC098" in rules
-    assert "DOC099" in rules
-    assert "FIX001" in rules
-    assert "MCP001" in rules
-
-
 def test_all_rules_returns_dict_copy() -> None:
-    # Mutating the returned dict must not affect the registry.
     rules = all_rules()
     rules.clear()
     assert "DOC001" in all_rules()
 
 
-def test_rule_metadata_fields() -> None:
+def test_doc001_metadata() -> None:
     meta, fn = all_rules()["DOC001"]
     assert meta.code == "DOC001"
     assert meta.namespace == "DOC"
@@ -82,6 +93,34 @@ def test_mcp001_metadata() -> None:
     meta, _ = all_rules()["MCP001"]
     assert meta.code == "MCP001"
     assert meta.namespace == "MCP"
+    assert meta.fixable is False
+    assert meta.unsafe_fixable is False
+
+
+def test_ty001_metadata() -> None:
+    meta, _ = all_rules()["TY001"]
+    assert meta.code == "TY001"
+    assert meta.namespace == "TY"
+    assert meta.default_severity == Severity.ERROR
+    assert meta.fixable is False
+
+
+def test_ty002_metadata() -> None:
+    meta, _ = all_rules()["TY002"]
+    assert meta.code == "TY002"
+    assert meta.namespace == "TY"
+    assert meta.default_severity == Severity.WARNING
+    assert meta.fixable is False
+
+
+def test_doc013_not_fixable() -> None:
+    meta, _ = all_rules()["DOC013"]
+    assert meta.fixable is False
+
+
+def test_doc051_not_fixable() -> None:
+    meta, _ = all_rules()["DOC051"]
+    assert meta.fixable is False
 
 
 # ---------------------------------------------------------------------------
@@ -90,14 +129,12 @@ def test_mcp001_metadata() -> None:
 
 
 def test_register_and_duplicate_raises() -> None:
-    # Register a unique test code once — succeeds.
     @register(_test_meta(_TEST_CODE))
     def _first(func, doc, config):  # type: ignore[misc]
         return []
 
     assert _TEST_CODE in all_rules()
 
-    # Registering the same code a second time must raise.
     with pytest.raises(ValueError, match="already registered"):
 
         @register(_test_meta(_TEST_CODE))

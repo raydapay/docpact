@@ -17,22 +17,10 @@ from pathlib import Path
 # Ensure the src layout is importable when run from the project root.
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-# Rule modules must be imported before the registry is populated.
-import docpact.rules.doc.doc001_missing_docstring  # noqa: F401, E402
-import docpact.rules.doc.doc002_module_docstring  # noqa: F401, E402
-import docpact.rules.doc.doc003_class_docstring  # noqa: F401, E402
-import docpact.rules.doc.doc007_param_mismatch  # noqa: F401, E402
-import docpact.rules.doc.doc012_missing_section  # noqa: F401, E402
-import docpact.rules.doc.doc013_noncanonical_empty  # noqa: F401, E402
-import docpact.rules.doc.doc014_suspicious_param  # noqa: F401, E402
-import docpact.rules.doc.doc050_pydantic_field  # noqa: F401, E402
-import docpact.rules.doc.doc051_annotated_constraint  # noqa: F401, E402
-import docpact.rules.doc.doc098_doctest_exception  # noqa: F401, E402
-import docpact.rules.doc.doc099_fill_marker  # noqa: F401, E402
-import docpact.rules.fix.fix001_bare_noqa  # noqa: F401, E402
-import docpact.rules.fix.fix002_no_reason  # noqa: F401, E402
-import docpact.rules.mcp.mcp001_decorator_docstring_conflict  # noqa: F401, E402
+from docpact.rules import load_builtin_rules  # noqa: E402
 from docpact.rules._registry import all_rules  # noqa: E402
+
+load_builtin_rules()
 
 FIXABILITY_NOTES = {
     (True, False): "Safe fix available (`--fix`)",

@@ -30,7 +30,7 @@ _NON_CANONICAL: frozenset[str] = frozenset({"n/a", "na", "none", ""})
         namespace="DOC",
         summary="Empty section uses non-canonical form; should be 'None.'",
         default_severity=Severity.WARNING,
-        fixable=True,
+        fixable=False,
         unsafe_fixable=False,
     )
 )

@@ -44,7 +44,7 @@ _CONSTRAINT_CALL_RE = re.compile(
         namespace="DOC",
         summary="Constraints section duplicates Annotated metadata",
         default_severity=Severity.ERROR,
-        fixable=True,
+        fixable=False,
         unsafe_fixable=False,
     )
 )

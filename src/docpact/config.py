@@ -277,6 +277,23 @@ def file_ignores_for(
     return frozenset(result)
 
 
+def rule_is_file_ignored(code: str, namespace: str, ignores: frozenset[str]) -> bool:
+    """Return True if a rule is suppressed by per-file-ignores patterns.
+
+    Unlike rule_is_enabled, this only checks the ignore side — it does
+    not require the rule to appear in a select list.
+
+    Args:
+        code: Full rule code, e.g. "TY001".
+        namespace: Rule namespace prefix, e.g. "TY".
+        ignores: Per-file ignore patterns from file_ignores_for().
+
+    Returns:
+        True when the rule should be skipped for this file.
+    """
+    return any(code == p or namespace == p or code.startswith(p) for p in ignores)
+
+
 def file_is_excluded(file_path: Path, exclude: tuple[str, ...]) -> bool:
     """Return True if a file matches any exclude pattern.
 

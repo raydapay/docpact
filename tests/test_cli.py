@@ -154,3 +154,93 @@ def test_check_config_exclude_skips_files(tmp_path: Path) -> None:
         result = runner.invoke(main, ["check", "--exit-zero", str(sub)], catch_exceptions=False)
     # File was excluded — no DOC001 output
     assert "DOC001" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Isolated rule-loading: prove all namespaces fire from a fresh CLI entry
+# ---------------------------------------------------------------------------
+
+
+def test_check_doc001_fires(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    result = _run("check", "--exit-zero", "--select", "DOC001", str(src))
+    assert "DOC001" in result.output  # type: ignore[union-attr]
+
+
+def test_check_doc007_fires(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text(
+        'def foo(x: int) -> None:\n    """Do foo.\n\n    Args:\n        y: wrong.\n    """\n'
+    )
+    result = _run("check", "--exit-zero", "--select", "DOC007", str(src))
+    assert "DOC007" in result.output  # type: ignore[union-attr]
+
+
+def test_check_doc012_fires(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text('def foo(x: int) -> None:\n    """Summary."""\n')
+    result = _run("check", "--exit-zero", "--select", "DOC012", str(src))
+    # DOC012 fires at tier 2+ when Args section missing; summary-only at tier1 passes.
+    # This file has no decorator so it's tier2 by default. x is documented nowhere.
+    assert "DOC012" in result.output  # type: ignore[union-attr]
+
+
+def test_check_ty001_fires(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text(
+        'def foo() -> None:\n    """Do foo.\n\n    Returns:\n        The result.\n    """\n'
+    )
+    result = _run("check", "--exit-zero", "--select", "TY001", str(src))
+    assert "TY001" in result.output  # type: ignore[union-attr]
+
+
+def test_check_ty002_fires(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text(
+        'def foo() -> int:\n    """Do foo.\n\n    Returns:\n        None.\n    """\n    return 1\n'
+    )
+    result = _run("check", "--exit-zero", "--select", "TY002", str(src))
+    assert "TY002" in result.output  # type: ignore[union-attr]
+
+
+def test_warnings_do_not_cause_nonzero_exit(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("# no module docstring\ndef foo() -> None:\n    pass\n")
+    result = _run("check", "--select", "DOC002", str(src))
+    # DOC002 is WARNING severity — should not set exit code 1
+    assert result.exit_code == 0  # type: ignore[union-attr]
+
+
+def test_errors_cause_nonzero_exit(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    result = _run("check", "--select", "DOC001", str(src))
+    assert result.exit_code == 1  # type: ignore[union-attr]
+
+
+def test_severity_off_skips_rule(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        toml = (
+            '[project]\nname = "test"\n\n'
+            '[tool.docpact]\nselect = ["DOC001"]\n\n'
+            '[tool.docpact.rules]\nDOC001 = "off"\n'
+        )
+        (Path(td) / "pyproject.toml").write_text(toml)
+        result = runner.invoke(main, ["check", "--exit-zero", str(src)], catch_exceptions=False)
+    assert "DOC001" not in result.output
+
+
+def test_unsafe_fixes_without_fix_errors() -> None:
+    result = _run("check", "--unsafe-fixes", str(Path(__file__)))
+    assert result.exit_code != 0  # type: ignore[union-attr]
+    assert "requires --fix" in result.output.lower()  # type: ignore[union-attr]
+
+
+def test_list_rules_shows_ty_namespace() -> None:
+    result = _run("list-rules")
+    assert "TY001" in result.output  # type: ignore[union-attr]
+    assert "TY002" in result.output  # type: ignore[union-attr]

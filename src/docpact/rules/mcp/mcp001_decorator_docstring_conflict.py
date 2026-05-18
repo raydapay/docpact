@@ -45,8 +45,8 @@ _MCP_DECORATOR_NAMES = frozenset(
         namespace="MCP",
         summary="Both decorator description= and docstring MCP: section present",
         default_severity=Severity.ERROR,
-        fixable=True,
-        unsafe_fixable=True,
+        fixable=False,
+        unsafe_fixable=False,
     )
 )
 def check(

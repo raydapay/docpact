@@ -2,7 +2,7 @@
 
 Each rule is a pure function with signature:
 
-    def rule_XXXNNN(
+    def check(
         func: FunctionInfo,
         doc: ParsedDocstring | None,
         config: RuleConfig,
@@ -13,10 +13,44 @@ Rules are organized by namespace:
 - doc/  — DOC rules (structural docstring rules)
 - mcp/  — MCP rules (MCP-specific validation)
 - fix/  — FIX rules (fix-mode diagnostics)
+- ty/   — TY rules (type/docstring cross-validation)
 
-HEUR, TY, and SEM namespaces are reserved (spec §15.3) but not
-implemented in v0.1.
+HEUR and SEM namespaces are reserved but not yet implemented.
 
-The registry (see _registry.py) maps rule codes to their implementing
-functions. Rules are discovered at startup, not registered manually.
+The registry (_registry.py) maps rule codes to their implementing
+functions. Rules self-register via @register on import. Call
+load_builtin_rules() before any_rules() to ensure all built-in rules
+are present.
 """
+
+from __future__ import annotations
+
+_BUILTIN_RULES_LOADED = False
+
+
+def load_builtin_rules() -> None:
+    """Import every built-in rule module so they register themselves.
+
+    Idempotent — safe to call multiple times.
+    """
+    global _BUILTIN_RULES_LOADED
+    if _BUILTIN_RULES_LOADED:
+        return
+    import docpact.rules.doc.doc001_missing_docstring
+    import docpact.rules.doc.doc002_module_docstring
+    import docpact.rules.doc.doc003_class_docstring
+    import docpact.rules.doc.doc007_param_mismatch
+    import docpact.rules.doc.doc012_missing_section
+    import docpact.rules.doc.doc013_noncanonical_empty
+    import docpact.rules.doc.doc014_suspicious_param
+    import docpact.rules.doc.doc050_pydantic_field
+    import docpact.rules.doc.doc051_annotated_constraint
+    import docpact.rules.doc.doc098_doctest_exception
+    import docpact.rules.doc.doc099_fill_marker
+    import docpact.rules.fix.fix001_bare_noqa
+    import docpact.rules.fix.fix002_no_reason
+    import docpact.rules.mcp.mcp001_decorator_docstring_conflict
+    import docpact.rules.ty.ty001_none_return_with_returns
+    import docpact.rules.ty.ty002_nonnone_return_empty  # noqa: F401
+
+    _BUILTIN_RULES_LOADED = True
