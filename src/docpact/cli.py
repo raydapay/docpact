@@ -143,7 +143,7 @@ def main() -> None:
     metavar="CODE",
     help="Rule codes or prefixes to disable (overrides config).",
 )
-def check(  # nodo: DOC012
+def check(  # nodo: DOC012 -- click params; Args section would duplicate --help text
     paths: tuple[str, ...],
     do_fix: bool,
     unsafe_fixes: bool,
@@ -221,7 +221,9 @@ def check(  # nodo: DOC012
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
 @click.option("--diff", is_flag=True, help="Show diff without writing files.")
-def generate(paths: tuple[str, ...], diff: bool) -> None:  # nodo: DOC012
+def generate(  # nodo: DOC012 -- click params; Args section would duplicate --help text
+    paths: tuple[str, ...], diff: bool
+) -> None:
     """Generate stub docstrings for undocumented functions."""
     config = load_config(Path.cwd())
     # Only DOC001 produces stubs; no other rule should drive generation.
@@ -332,7 +334,9 @@ def _wrap_items(items: list[str], indent: int, width: int = 78) -> str:
 
 @main.command(name="show-schema")
 @click.option("--tier", type=click.IntRange(1, 4), required=True)
-def show_schema(tier: int) -> None:  # nodo: DOC012
+def show_schema(  # nodo: DOC012 -- click params; Args section would duplicate --help text
+    tier: int,
+) -> None:
     """Print the schema requirements for a given tier."""
     title, required, recommended, optional = _TIER_SCHEMA[tier]
     click.echo(f"\nTier {tier} — {title}\n")
@@ -352,7 +356,9 @@ def show_schema(tier: int) -> None:  # nodo: DOC012
     type=click.Choice(["text", "json"]),
     default="text",
 )
-def list_rules(output_format: str) -> None:  # nodo: DOC012
+def list_rules(  # nodo: DOC012 -- click params; Args section would duplicate --help text
+    output_format: str,
+) -> None:
     """List all defined rules with their default severity."""
     import json as _json
 
