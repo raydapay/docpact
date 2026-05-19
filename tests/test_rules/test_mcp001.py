@@ -124,12 +124,19 @@ def test_location_is_function_definition(tmp_path: Path) -> None:
     assert results[0].location.line == 5
 
 
-def test_error_severity(tmp_path: Path) -> None:
+def test_severity_follows_config(tmp_path: Path) -> None:
     dec = (DecoratorInfo(name="mcp.tool", arguments={"description": '"desc"'}),)
     func = _func(tmp_path / "t.py", decorators=dec)
     doc = _doc(has_mcp_section=True)
     results = check(func, doc, _cfg())
-    assert results[0].severity == Severity.ERROR
+    assert results[0].severity == Severity.ERROR  # _cfg() overrides to ERROR
+
+
+def test_default_severity_is_warning() -> None:
+    from docpact.rules._registry import all_rules
+
+    meta, _ = all_rules()["MCP001"]
+    assert meta.default_severity == Severity.WARNING
 
 
 def test_first_matching_decorator_wins(tmp_path: Path) -> None:

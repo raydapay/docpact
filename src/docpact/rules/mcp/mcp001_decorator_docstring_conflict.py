@@ -1,19 +1,24 @@
 """MCP001 — Both decorator description= and docstring MCP: section present.
 
-FastMCP accepts both forms silently; if they have different content, the
-runtime schema reflects whichever wins under FastMCP's parsing, while the
-other form drifts unnoticed. docpact reports MCP001 whenever both are
-present so the conflict is caught before schema generation.
+FastMCP reads MCP tool metadata from one of two places: the decorator's
+description= keyword argument, or the docstring's MCP: section.  The
+three states and their outcomes:
 
-Fix behaviour:
-  --fix           removes the docstring MCP: section when content is
-                  identical (unambiguous deduplication).
-  --unsafe-fixes  removes the docstring MCP: section when content
-                  differs; the decorator wins because it is closer to
-                  runtime behaviour.
+  1. Neither present → DOC012 fires (missing required MCP description).
+  2. Exactly one present → OK.  Both forms are valid.  The decorator
+     form (description=) is the FastMCP-recommended approach; the
+     docstring MCP: section is the documentation-first alternative.
+  3. Both present → MCP001 fires.  At runtime FastMCP's decorator
+     description= takes precedence, but the MCP: section is kept for
+     documentation purposes.  The conflict is flagged so the author can
+     decide whether the two descriptions are intentionally different or
+     have drifted out of sync.
 
-Fix generation (section removal from the docstring raw text) is
-planned; detection ships in v0.1.
+No automated fix is provided: removing or merging the two descriptions
+requires human judgment about which content is authoritative.
+
+Severity is WARNING (default), reflecting that "both forms present" is
+a maintenance concern rather than a structural error.
 """
 
 from __future__ import annotations
@@ -44,7 +49,7 @@ _MCP_DECORATOR_NAMES = frozenset(
         code="MCP001",
         namespace="MCP",
         summary="Both decorator description= and docstring MCP: section present",
-        default_severity=Severity.ERROR,
+        default_severity=Severity.WARNING,
         fixable=False,
         unsafe_fixable=False,
     )
