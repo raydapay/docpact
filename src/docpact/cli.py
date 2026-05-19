@@ -50,6 +50,7 @@ from docpact.rules.doc.doc003_class_docstring import check_class_docstrings
 from docpact.rules.doc.doc050_pydantic_field import check_pydantic_fields
 from docpact.rules.fix.fix001_bare_noqa import check_bare_noqa
 from docpact.rules.fix.fix002_no_reason import check_no_reason
+from docpact.rules.fix.fix003_stale_suppression import check_stale_suppressions
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
 
@@ -128,6 +129,11 @@ def _filter_gitignored(files: list[Path], cwd: Path) -> list[Path]:
         return files
 
 
+_FILE_LEVEL_CODES: frozenset[str] = frozenset(
+    {"FIX001", "FIX002", "FIX003", "DOC002", "DOC003", "DOC050"}
+)
+
+
 def _run_checks(
     py_files: list[Path],
     config: Config,
@@ -145,6 +151,9 @@ def _run_checks(
         file_suppressions = parse_suppressions(source_text, markers=config.suppress_comment)
         suppressions[file_path] = file_suppressions
         extra_ignores = file_ignores_for(file_path, config.per_file_ignores)
+
+        # Accumulate per-file so FIX003 can inspect the full violation set.
+        file_results: list[RuleResult] = []
 
         # File-level rules: run once per file before function-level rules.
         for code, namespace in (
@@ -167,9 +176,11 @@ def _run_checks(
             cfg = RuleConfig(severity=severity, options={})
             match code:
                 case "FIX001":
-                    results.extend(check_bare_noqa(source_text, file_suppressions, file_path, cfg))
+                    file_results.extend(
+                        check_bare_noqa(source_text, file_suppressions, file_path, cfg)
+                    )
                 case "FIX002":
-                    results.extend(
+                    file_results.extend(
                         check_no_reason(
                             source_text,
                             file_suppressions,
@@ -179,11 +190,11 @@ def _run_checks(
                         )
                     )
                 case "DOC002":
-                    results.extend(check_module_docstring(source_text, file_path, cfg))
+                    file_results.extend(check_module_docstring(source_text, file_path, cfg))
                 case "DOC003":
-                    results.extend(check_class_docstrings(source_text, file_path, cfg))
+                    file_results.extend(check_class_docstrings(source_text, file_path, cfg))
                 case "DOC050":
-                    results.extend(check_pydantic_fields(source_text, file_path, cfg))
+                    file_results.extend(check_pydantic_fields(source_text, file_path, cfg))
 
         all_names = parse_all_names(source_text)
         source_lines = source_text.splitlines()
@@ -200,8 +211,8 @@ def _run_checks(
                     tier = pragma_tier
             config_options: dict[str, object] = {"tier": tier}
             for meta, rule_fn in rules.values():
-                if meta.code in {"FIX001", "FIX002", "DOC002", "DOC003", "DOC050"}:
-                    continue  # handled above as file-level rules
+                if meta.code in _FILE_LEVEL_CODES:
+                    continue  # handled as file-level rules (pre- or post-pass)
                 if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
                     continue
                 if rule_is_file_ignored(meta.code, meta.namespace, extra_ignores):
@@ -210,7 +221,25 @@ def _run_checks(
                 if severity == Severity.OFF:
                     continue
                 cfg = RuleConfig(severity=severity, options=config_options)
-                results.extend(rule_fn(func, doc, cfg))
+                file_results.extend(rule_fn(func, doc, cfg))
+
+        # FIX003 post-pass: needs the complete violation set for this file.
+        if (
+            "FIX003" in rules
+            and rule_is_enabled("FIX003", "FIX", config.select, config.ignore)
+            and not rule_is_file_ignored("FIX003", "FIX", extra_ignores)
+        ):
+            meta, _ = rules["FIX003"]
+            severity = config.rule_severities.get("FIX003", meta.default_severity)
+            if severity != Severity.OFF:
+                cfg = RuleConfig(severity=severity, options={})
+                file_results.extend(
+                    check_stale_suppressions(
+                        source_text, file_suppressions, file_results, file_path, cfg
+                    )
+                )
+
+        results.extend(file_results)
 
     results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
     return results, suppressions

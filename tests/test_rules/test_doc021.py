@@ -202,3 +202,91 @@ def test_default_phrase_without_trailing_period(tmp_path: Path) -> None:
     doc = _doc({"count": "Number of items. Defaults to 10"})
     results = check(func, doc, _cfg())
     assert len(results) == 1
+
+
+# ---------------------------------------------------------------------------
+# rST double-backtick markup (finding 1)
+# ---------------------------------------------------------------------------
+
+
+def test_rst_backtick_string_default_no_error(tmp_path: Path) -> None:
+    # ``"human"`` in docstring should match "human" in signature.
+    func = _func(tmp_path / "t.py", params=(_param("tier", '"human"'),))
+    doc = _doc({"tier": 'For HTTP keys. Defaults to ``"human"``.'})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_rst_backtick_bool_default_no_error(tmp_path: Path) -> None:
+    func = _func(tmp_path / "t.py", params=(_param("flag", "True"),))
+    doc = _doc({"flag": "Enable feature. Defaults to ``True``."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_rst_backtick_drift_fires(tmp_path: Path) -> None:
+    # ``"agent"`` in docstring vs "human" in signature → DOC021 fires.
+    func = _func(tmp_path / "t.py", params=(_param("tier", '"human"'),))
+    doc = _doc({"tier": 'Tier. Defaults to ``"agent"``.'})
+    results = check(func, doc, _cfg())
+    assert len(results) == 1
+    assert results[0].code == "DOC021"
+
+
+# ---------------------------------------------------------------------------
+# Wrapper default extraction (finding 2)
+# ---------------------------------------------------------------------------
+
+
+def test_query_wrapper_false_no_error(tmp_path: Path) -> None:
+    # Query(False) effective default is False.
+    func = _func(tmp_path / "t.py", params=(_param("verbose", "Query(False)"),))
+    doc = _doc({"verbose": "Include details. Defaults to False."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_field_wrapper_string_no_error(tmp_path: Path) -> None:
+    func = _func(tmp_path / "t.py", params=(_param("name", 'Field("anon")'),))
+    doc = _doc({"name": "User name. Defaults to 'anon'."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_query_wrapper_drift_fires(tmp_path: Path) -> None:
+    func = _func(tmp_path / "t.py", params=(_param("limit", "Query(10)"),))
+    doc = _doc({"limit": "Max results. Defaults to 50."})
+    results = check(func, doc, _cfg())
+    assert len(results) == 1
+    assert results[0].code == "DOC021"
+
+
+def test_query_false_default_message_shows_wrapper(tmp_path: Path) -> None:
+    # The message should show the original signature default, not the extracted one.
+    func = _func(tmp_path / "t.py", params=(_param("verbose", "Query(False)"),))
+    doc = _doc({"verbose": "Include details. Defaults to true."})
+    results = check(func, doc, _cfg())
+    assert len(results) == 1
+    assert "Query(False)" in results[0].message
+
+
+# ---------------------------------------------------------------------------
+# Literals-only scope (finding 3)
+# ---------------------------------------------------------------------------
+
+
+def test_variable_reference_default_no_error(tmp_path: Path) -> None:
+    # SESSION_REGISTRY is not a literal — DOC021 should not fire regardless of prose.
+    func = _func(tmp_path / "t.py", params=(_param("registry", "SESSION_REGISTRY"),))
+    doc = _doc({"registry": "Active store. Defaults to the session registry."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_variable_reference_with_contradicting_prose_still_silent(tmp_path: Path) -> None:
+    # Known blind spot: we cannot verify constant names. Documented in the rule docstring.
+    func = _func(tmp_path / "t.py", params=(_param("timeout", "DEFAULT_TIMEOUT"),))
+    doc = _doc({"timeout": "Timeout seconds. Defaults to 99."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_multi_arg_call_not_extracted(tmp_path: Path) -> None:
+    # Query(False, description="...") has multiple args — not extracted, not a literal.
+    func = _func(tmp_path / "t.py", params=(_param("flag", 'Query(False, description="x")'),))
+    doc = _doc({"flag": "Flag. Defaults to true."})
+    assert check(func, doc, _cfg()) == []

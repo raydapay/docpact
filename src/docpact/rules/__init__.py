@@ -49,6 +49,7 @@ def load_builtin_rules() -> None:
     import docpact.rules.doc.doc099_fill_marker
     import docpact.rules.fix.fix001_bare_noqa
     import docpact.rules.fix.fix002_no_reason
+    import docpact.rules.fix.fix003_stale_suppression
     import docpact.rules.mcp.mcp001_decorator_docstring_conflict
     import docpact.rules.ty.ty001_none_return_with_returns
     import docpact.rules.ty.ty002_nonnone_return_empty  # noqa: F401

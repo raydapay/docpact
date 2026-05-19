@@ -17,15 +17,45 @@ wrong; the correct resolution requires human judgement.
 
 Only fires when:
 - The parameter has a default in the signature.
+- The default is a Python literal (str, int, float, bool, None). See below.
 - The description contains a ``Defaults to`` phrase.
 - The extracted value does not match the signature default.
 
-Does not fire when the parameter has no default (cannot meaningfully
-compare) or when no ``Defaults to`` phrase is present.
+Does not fire when the parameter has no default, when no ``Defaults to``
+phrase is present, or when the effective default is not a literal.
+
+## Literal-only scope and its known blind spot
+
+DOC021 only fires when the *effective* default is a Python constant. This
+excludes module-level name references such as ``SESSION_REGISTRY`` or
+``DEFAULT_TIMEOUT``.
+
+**Blind spot:** ``def foo(x=SOME_CONSTANT)`` with a docstring that says
+``"Defaults to 99"`` will not fire even if ``SOME_CONSTANT != 99``. We
+cannot mechanically verify the relationship between a constant name and its
+value without importing the module (which docpact explicitly forbids, see
+CLAUDE.md §no-imports).
+
+**Why this is the right tradeoff:** authors routinely choose human-readable
+prose over the constant name — ``"Defaults to the session registry"``
+rather than ``"Defaults to SESSION_REGISTRY"``. Both are arguably correct;
+firing on one forces an arbitrary choice between naming the variable and
+describing it. Limiting the rule to literals eliminates all such ambiguous
+cases, reduces the false-positive rate substantially on real codebases
+(confirmed by recon-app dry-run), and keeps the rule actionable.
+
+## FastAPI / wrapper defaults
+
+When the signature default is a single-argument call expression like
+``Query(False)`` or ``Field("hello")``, the *effective* default for
+documentation purposes is the inner literal (``False`` / ``"hello"``),
+not the full call expression. DOC021 extracts the inner value and compares
+against it. This prevents systematic false positives on FastAPI route files.
 """
 
 from __future__ import annotations
 
+import ast
 import re
 from typing import TYPE_CHECKING
 
@@ -47,11 +77,45 @@ _DEFAULTS_TO_RE: re.Pattern[str] = re.compile(
 
 
 def _normalize(s: str) -> str:
-    """Strip whitespace and remove one layer of matching quotes for comparison."""
+    """Strip whitespace, rST backtick pairs, and one layer of matching quotes."""
     s = s.strip()
+    # Strip rST double-backtick markup: ``value`` → value
+    if s.startswith("``") and s.endswith("``") and len(s) > 4:
+        s = s[2:-2]
     if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
         return s[1:-1]
     return s
+
+
+def _effective_default(default_str: str) -> str:
+    """Return the effective default value for comparison.
+
+    For single-argument call expressions like Query(False) or Field("x"),
+    returns the unparsed inner literal. For everything else returns the
+    original string unchanged.
+    """
+    try:
+        tree = ast.parse(default_str, mode="eval")
+    except SyntaxError:
+        return default_str
+    expr = tree.body
+    if (
+        isinstance(expr, ast.Call)
+        and len(expr.args) == 1
+        and not expr.keywords
+        and isinstance(expr.args[0], ast.Constant)
+    ):
+        return ast.unparse(expr.args[0])
+    return default_str
+
+
+def _is_literal_default(default_str: str) -> bool:
+    """Return True if the default string is a Python constant (str/int/float/bool/None)."""
+    try:
+        tree = ast.parse(default_str, mode="eval")
+    except SyntaxError:
+        return False
+    return isinstance(tree.body, ast.Constant)
 
 
 @register(
@@ -88,11 +152,15 @@ def check(
         name = entry.key.lstrip("*")
         if name not in param_defaults:
             continue
+        raw_default = param_defaults[name]
+        effective = _effective_default(raw_default)
+        if not _is_literal_default(effective):
+            continue
         m = _DEFAULTS_TO_RE.search(entry.description)
         if m is None:
             continue
         documented = _normalize(m.group(1))
-        actual = _normalize(param_defaults[name])
+        actual = _normalize(effective)
         if documented != actual:
             results.append(
                 RuleResult(
@@ -100,7 +168,7 @@ def check(
                     severity=config.severity,
                     message=(
                         f"Parameter {name!r}: docstring says 'Defaults to {m.group(1)}' "
-                        f"but signature default is {param_defaults[name]!r}"
+                        f"but signature default is {raw_default!r}"
                     ),
                     location=loc,
                 )

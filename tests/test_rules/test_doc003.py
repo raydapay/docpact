@@ -134,6 +134,78 @@ def test_results_in_source_order(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tier logic — leading underscore
+# ---------------------------------------------------------------------------
+
+
+def test_private_class_leading_underscore_no_error(tmp_path: Path) -> None:
+    source = "class _Helper:\n    pass\n"
+    assert _run(source, tmp_path / "t.py") == []
+
+
+def test_private_class_double_underscore_no_error(tmp_path: Path) -> None:
+    source = "class __Internal:\n    pass\n"
+    assert _run(source, tmp_path / "t.py") == []
+
+
+def test_public_class_no_underscore_fires(tmp_path: Path) -> None:
+    source = "class Helper:\n    pass\n"
+    assert len(_run(source, tmp_path / "t.py")) == 1
+
+
+def test_private_nested_class_no_error(tmp_path: Path) -> None:
+    source = 'class Outer:\n    """Outer."""\n    class _Inner:\n        pass\n'
+    assert _run(source, tmp_path / "t.py") == []
+
+
+# ---------------------------------------------------------------------------
+# Tier logic — __all__
+# ---------------------------------------------------------------------------
+
+
+def test_class_in_all_fires(tmp_path: Path) -> None:
+    source = '__all__ = ["Public"]\nclass Public:\n    pass\n'
+    results = _run(source, tmp_path / "t.py")
+    assert len(results) == 1
+    assert "Public" in results[0].message
+
+
+def test_class_not_in_all_silent(tmp_path: Path) -> None:
+    source = (
+        '__all__ = ["Public"]\nclass Public:\n    """Pub."""\n    pass\nclass Internal:\n    pass\n'
+    )
+    results = _run(source, tmp_path / "t.py")
+    assert results == []
+
+
+def test_no_all_public_class_fires(tmp_path: Path) -> None:
+    # Without __all__, non-underscore classes are assumed public.
+    source = "class Context:\n    pass\n"
+    assert len(_run(source, tmp_path / "t.py")) == 1
+
+
+def test_all_empty_all_classes_silent(tmp_path: Path) -> None:
+    # __all__ = [] means nothing is exported; all top-level classes are internal.
+    source = "__all__ = []\nclass Context:\n    pass\n"
+    assert _run(source, tmp_path / "t.py") == []
+
+
+def test_all_does_not_suppress_nested_classes(tmp_path: Path) -> None:
+    # __all__ only governs top-level names; nested classes still fire if undocumented.
+    source = '__all__ = ["Outer"]\nclass Outer:\n    """Outer."""\n    class Inner:\n        pass\n'
+    results = _run(source, tmp_path / "t.py")
+    assert len(results) == 1
+    assert "Inner" in results[0].message
+
+
+def test_dynamic_all_falls_back_to_no_all_behaviour(tmp_path: Path) -> None:
+    # Non-literal __all__ → parse_all_names returns None → no filtering.
+    source = "__all__ = list(EXPORTS)\nclass Ctx:\n    pass\n"
+    results = _run(source, tmp_path / "t.py")
+    assert len(results) == 1
+
+
+# ---------------------------------------------------------------------------
 # Stub check() function
 # ---------------------------------------------------------------------------
 
