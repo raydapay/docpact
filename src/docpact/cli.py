@@ -33,7 +33,14 @@ from docpact.config import (
 )
 from docpact.fix import apply_fixes, diff_fixes
 from docpact.model.diagnostic import Severity
-from docpact.output import format_json, format_sarif, format_statistics, format_summary, format_text
+from docpact.output import (
+    format_github,
+    format_json,
+    format_sarif,
+    format_statistics,
+    format_summary,
+    format_text,
+)
 from docpact.parser.docstring import GoogleParser, NumpyParser
 from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
 from docpact.rules import load_builtin_rules
@@ -227,7 +234,7 @@ def main() -> None:
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["text", "json", "sarif"]),
+    type=click.Choice(["text", "json", "sarif", "github"]),
     default="text",
     help="Output format.",
 )
@@ -396,6 +403,10 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         click.echo(format_json(visible, cwd=cwd))
     elif output_format == "sarif":
         click.echo(format_sarif(visible, cwd=cwd))
+    elif output_format == "github":
+        output = format_github(visible, cwd=cwd)
+        if output:
+            click.echo(output)
 
     has_errors = any(r.severity == Severity.ERROR for r in visible)
     if has_errors and not exit_zero:

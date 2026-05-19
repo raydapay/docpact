@@ -221,6 +221,42 @@ def format_sarif(results: list[RuleResult], cwd: Path | None = None) -> str:
     )
 
 
+def format_github(results: list[RuleResult], cwd: Path | None = None) -> str:
+    """Format diagnostics as GitHub Actions workflow commands.
+
+    Emits ``::error`` or ``::warning`` annotations that GitHub Actions parses
+    as inline PR and commit annotations. No upload step required — pipe the
+    output directly to the Actions log.
+
+    Args:
+        results: Diagnostics to format.
+        cwd: Working directory used to make file paths relative.
+            When None the paths are left as-is.
+
+    Returns:
+        Newline-joined annotation lines. Empty string when results is empty.
+    """
+    if not results:
+        return ""
+
+    from docpact.model.diagnostic import Severity
+
+    lines: list[str] = []
+    for r in results:
+        path = r.location.file_path
+        if cwd is not None:
+            with contextlib.suppress(ValueError):
+                path = path.relative_to(cwd)
+        level = "error" if r.severity == Severity.ERROR else "warning"
+        # GitHub annotation syntax uses :: as delimiter; escape any occurrences in the message.
+        message = r.message.replace("::", "%3A%3A")
+        col = r.location.column + 1  # GitHub uses 1-based columns
+        lines.append(
+            f"::{level} file={path},line={r.location.line},col={col},title={r.code}::{message}"
+        )
+    return "\n".join(lines)
+
+
 def format_statistics(results: list[RuleResult]) -> str:
     """Format a per-rule violation count table.
 

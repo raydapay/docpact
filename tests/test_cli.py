@@ -606,3 +606,35 @@ def test_config_error_exits_two(tmp_path: Path) -> None:
         )
         result = runner.invoke(main, ["check", str(src)])
     assert result.exit_code == 2
+
+
+# ---------------------------------------------------------------------------
+# --format github
+# ---------------------------------------------------------------------------
+
+
+def test_format_github_emits_annotations(tmp_path: Path) -> None:
+    """--format github produces GitHub Actions ::error / ::warning annotations."""
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    result = _run("check", "--format", "github", "--exit-zero", "--select", "DOC001", str(src))
+    output = result.output  # type: ignore[union-attr]
+    assert output.startswith("::error ")
+    assert "DOC001" in output
+
+
+def test_format_github_warning_uses_warning_level(tmp_path: Path) -> None:
+    """WARNING-severity rules produce ::warning annotations, not ::error."""
+    src = tmp_path / "t.py"
+    src.write_text("# no module docstring\ndef foo() -> None:\n    pass\n")
+    result = _run("check", "--format", "github", "--exit-zero", "--select", "DOC002", str(src))
+    output = result.output  # type: ignore[union-attr]
+    assert output.startswith("::warning ")
+
+
+def test_format_github_clean_file_no_output(tmp_path: Path) -> None:
+    """A clean file produces no annotation output."""
+    src = tmp_path / "t.py"
+    src.write_text('"""Module."""\ndef foo() -> None:\n    """Do foo."""\n')
+    result = _run("check", "--format", "github", str(src))
+    assert result.output.strip() == ""  # type: ignore[union-attr]
