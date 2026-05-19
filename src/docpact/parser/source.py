@@ -19,12 +19,36 @@ Why not tree-sitter:
 from __future__ import annotations
 
 import ast
+import re
 from typing import TYPE_CHECKING
 
 from docpact.model.function_info import DecoratorInfo, FunctionInfo, ParameterInfo
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+_TIER_PRAGMA_RE: re.Pattern[str] = re.compile(r"#\s*docpact:\s*tier\s*=\s*([1-4])\b")
+
+
+def parse_tier_pragma(line_text: str) -> int | None:
+    """Extract a function-level tier pragma from a single source line.
+
+    Args:
+        line_text: The raw text of the def line (or any line) to inspect.
+
+    Returns:
+        Tier number 1-4 if a ``# docpact: tier=N`` comment is present,
+        otherwise None.
+
+    Constraints:
+        Only the first matching pragma on the line is returned.
+        Values outside 1-4 are not matched.
+
+    Stability: beta
+    """
+    m = _TIER_PRAGMA_RE.search(line_text)
+    return int(m.group(1)) if m else None
 
 
 def parse_all_names(source: str) -> frozenset[str] | None:

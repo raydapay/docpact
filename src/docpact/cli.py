@@ -33,7 +33,7 @@ from docpact.fix import apply_fixes, diff_fixes
 from docpact.model.diagnostic import Severity
 from docpact.output import format_json, format_sarif, format_summary, format_text
 from docpact.parser.docstring import GoogleParser, NumpyParser
-from docpact.parser.source import extract_functions, parse_all_names
+from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
 from docpact.rules import load_builtin_rules
 from docpact.rules._registry import RuleConfig, all_rules
 from docpact.rules.doc.doc002_module_docstring import check_module_docstring
@@ -156,10 +156,18 @@ def _run_checks(
                     results.extend(check_pydantic_fields(source_text, file_path, cfg))
 
         all_names = parse_all_names(source_text)
+        source_lines = source_text.splitlines()
         functions = extract_functions(file_path)
         for func in functions:
             doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
             tier = assign_tier(func, config.tier_overrides, all_names=all_names)
+            if config.allow_pragma:
+                line_text = (
+                    source_lines[func.line - 1] if 0 < func.line <= len(source_lines) else ""
+                )
+                pragma_tier = parse_tier_pragma(line_text)
+                if pragma_tier is not None:
+                    tier = pragma_tier
             config_options: dict[str, object] = {"tier": tier}
             for meta, rule_fn in rules.values():
                 if meta.code in {"FIX001", "FIX002", "DOC002", "DOC003", "DOC050"}:
@@ -267,6 +275,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             tier_overrides=config.tier_overrides,
             rule_severities=config.rule_severities,
             suppress_comment=config.suppress_comment,
+            allow_pragma=config.allow_pragma,
         )
     if cli_ignore:
         config = Config(
@@ -280,6 +289,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             tier_overrides=config.tier_overrides,
             rule_severities=config.rule_severities,
             suppress_comment=config.suppress_comment,
+            allow_pragma=config.allow_pragma,
         )
 
     py_files = _collect_py_files(paths, config)

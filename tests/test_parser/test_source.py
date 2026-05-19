@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from docpact.parser.source import extract_functions, parse_all_names
+from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
 
 if TYPE_CHECKING:
     from docpact.model.function_info import FunctionInfo
@@ -495,3 +495,41 @@ def test_parse_all_names_inside_function_ignored() -> None:
 
 def test_parse_all_names_syntax_error_returns_none() -> None:
     assert parse_all_names("def (broken:") is None
+
+
+# ---------------------------------------------------------------------------
+# parse_tier_pragma
+# ---------------------------------------------------------------------------
+
+
+def test_parse_tier_pragma_absent_returns_none() -> None:
+    assert parse_tier_pragma("def foo(): pass") is None
+
+
+def test_parse_tier_pragma_tier1() -> None:
+    assert parse_tier_pragma("def foo():  # docpact: tier=1") == 1
+
+
+def test_parse_tier_pragma_tier3() -> None:
+    assert parse_tier_pragma("def foo():  # docpact: tier=3") == 3
+
+
+def test_parse_tier_pragma_tier4() -> None:
+    assert parse_tier_pragma("def foo():  # docpact: tier=4") == 4
+
+
+def test_parse_tier_pragma_extra_whitespace() -> None:
+    assert parse_tier_pragma("def foo():  # docpact:  tier  =  2") == 2
+
+
+def test_parse_tier_pragma_invalid_value_not_matched() -> None:
+    # 5 is out of range 1-4; the pattern does not match it.
+    assert parse_tier_pragma("def foo():  # docpact: tier=5") is None
+
+
+def test_parse_tier_pragma_zero_not_matched() -> None:
+    assert parse_tier_pragma("def foo():  # docpact: tier=0") is None
+
+
+def test_parse_tier_pragma_in_middle_of_line() -> None:
+    assert parse_tier_pragma("    async def handler(self):  # docpact: tier=3 -- MCP") == 3

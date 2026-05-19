@@ -281,3 +281,30 @@ def test_file_excluded_exact_match() -> None:
         Path("/project/src/_generated.py"),
         ("**/_generated.py",),
     )
+
+
+# ---------------------------------------------------------------------------
+# allow_pragma
+# ---------------------------------------------------------------------------
+
+
+def test_allow_pragma_default_false() -> None:
+    assert Config().allow_pragma is False
+
+
+def test_allow_pragma_parsed_from_toml(tmp_path: Path) -> None:
+    (tmp_path / "docpact.toml").write_text("allow_pragma = true\n")
+    cfg = load_config(tmp_path)
+    assert cfg.allow_pragma is True
+
+
+def test_allow_pragma_false_in_toml(tmp_path: Path) -> None:
+    (tmp_path / "docpact.toml").write_text("allow_pragma = false\n")
+    cfg = load_config(tmp_path)
+    assert cfg.allow_pragma is False
+
+
+def test_allow_pragma_non_bool_raises(tmp_path: Path) -> None:
+    (tmp_path / "docpact.toml").write_text('allow_pragma = "yes"\n')
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)

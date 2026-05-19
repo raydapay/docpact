@@ -345,3 +345,51 @@ def test_changed_only_invalid_ref_exits_with_error() -> None:
             ["check", "--changed-only", "no-such-ref-xyz", str(td_path)],
         )
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# allow_pragma / # docpact: tier=N
+# ---------------------------------------------------------------------------
+
+
+def test_pragma_ignored_when_allow_pragma_false(tmp_path: Path) -> None:
+    """Without allow_pragma, a # docpact: tier=1 pragma has no effect."""
+    src = tmp_path / "t.py"
+    # A public function with a pragma that would demote it to Tier 1.
+    # Without allow_pragma, it stays Tier 2 and DOC012 fires (Args missing).
+    src.write_text('def foo(x: int) -> None:  # docpact: tier=1\n    """Summary."""\n')
+    result = _run("check", "--exit-zero", "--select", "DOC012", str(src))
+    # Tier 2 is in effect → DOC012 fires because Args is missing.
+    assert "DOC012" in result.output  # type: ignore[union-attr]
+
+
+def test_pragma_demotes_to_tier1_when_allowed(tmp_path: Path) -> None:
+    """# docpact: tier=1 on a public function suppresses Tier-2 requirements."""
+    src = tmp_path / "t.py"
+    src.write_text('def foo(x: int) -> None:  # docpact: tier=1\n    """Summary."""\n')
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text(
+            "[project]\nname = 'test'\n[tool.docpact]\nallow_pragma = true\n"
+        )
+        result = runner.invoke(
+            main, ["check", "--exit-zero", "--select", "DOC012", str(src)], catch_exceptions=False
+        )
+    # Tier 1 is in effect → DOC012 does not fire.
+    assert "DOC012" not in result.output
+
+
+def test_pragma_promotes_private_fn_to_tier2(tmp_path: Path) -> None:
+    """# docpact: tier=2 on a _private function requires Tier-2 docs."""
+    src = tmp_path / "t.py"
+    src.write_text('def _helper(x: int) -> None:  # docpact: tier=2\n    """Summary."""\n')
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text(
+            "[project]\nname = 'test'\n[tool.docpact]\nallow_pragma = true\n"
+        )
+        result = runner.invoke(
+            main, ["check", "--exit-zero", "--select", "DOC012", str(src)], catch_exceptions=False
+        )
+    # Tier 2 → DOC012 fires for missing Args.
+    assert "DOC012" in result.output

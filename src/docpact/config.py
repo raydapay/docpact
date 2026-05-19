@@ -41,6 +41,7 @@ class Config:
     tier_overrides: dict[str, int] = field(default_factory=dict)
     rule_severities: dict[str, Severity] = field(default_factory=dict)
     suppress_comment: tuple[str, ...] = ("nodo",)
+    allow_pragma: bool = False
 
 
 _SEVERITY_MAP: dict[str, Severity] = {
@@ -148,6 +149,13 @@ def _parse_section(raw: dict[str, object]) -> Config:
         if not suppress_comment:
             raise ConfigError("suppress_comment: must contain at least one marker string")
 
+    allow_pragma: bool = False
+    if "allow_pragma" in raw:
+        v = raw["allow_pragma"]
+        if not isinstance(v, bool):
+            raise ConfigError("allow_pragma: expected a boolean")
+        allow_pragma = v
+
     return Config(
         schema=schema,
         docstring_format=docstring_format,
@@ -159,6 +167,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
         per_file_ignores=per_file_ignores,
         tier_overrides=tier_overrides,
         suppress_comment=suppress_comment,
+        allow_pragma=allow_pragma,
     )
 
 
