@@ -10,7 +10,7 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050,
-DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001. 767 tests, 94% coverage.
+DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001. 774 tests, 94% coverage.
 DOC051 deferred (see "Deferred with reasoning" below).
 
 No active milestone.
@@ -18,6 +18,24 @@ No active milestone.
 ---
 
 ## Recent changes (post-v0.3)
+
+### tokenize-based suppression scanner — 2026-05-19
+
+`parse_suppressions` replaced the line-by-line text scan with
+`tokenize.generate_tokens`. The tokenize module emits `COMMENT` tokens only
+for actual Python comments — triple-quoted docstrings, inline strings, and
+f-strings are invisible to the scanner.
+
+Root cause of false FIX003 warnings: 7 source files contain suppression syntax
+examples in their module docstrings (suppress.py, baseline.py, fix001/002/003,
+doc003, doc022). The old scanner created phantom suppression records for those
+lines; FIX003 then fired because no real violation existed on them. The 7-entry
+`per-file-ignores` workaround in `pyproject.toml` is removed.
+
+`tokenize.TokenError` on broken source returns partial results rather than
+raising; PARSE001 owns parse failures at the file level.
+
+7 new tests in `test_suppress.py`. `suppress.py` is now at 100% coverage.
 
 ### PARSE001 — Python syntax error rule — 2026-05-19
 

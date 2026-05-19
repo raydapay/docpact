@@ -158,7 +158,7 @@ It does not replace ruff or ty. It does not import the code it analyzes. It does
 
 ## Status
 
-Self-hosting: docpact validates its own source on every commit. 767 tests, 94% coverage.
+Self-hosting: docpact validates its own source on every commit. 774 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001.
 
