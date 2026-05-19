@@ -46,7 +46,11 @@ def _sarif_level(severity: Severity) -> str:
     return "note"
 
 
-def format_text(results: list[RuleResult], cwd: Path | None = None) -> str:
+def format_text(
+    results: list[RuleResult],
+    cwd: Path | None = None,
+    color: bool = False,
+) -> str:
     """Format diagnostics as human-readable text.
 
     Each result produces one line:
@@ -60,12 +64,18 @@ def format_text(results: list[RuleResult], cwd: Path | None = None) -> str:
         results: Diagnostics to format, in any order.
         cwd: Working directory used to make file paths relative.
             When None the paths are left as-is.
+        color: When True, apply ANSI colors via rich: error codes in
+            red, warning codes in yellow, fix markers in cyan, help
+            lines dimmed.
 
     Returns:
         Formatted string, empty when results is empty.
     """
     if not results:
         return ""
+
+    if color:
+        return _format_text_color(results, cwd)
 
     lines: list[str] = []
     for r in results:
@@ -80,6 +90,46 @@ def format_text(results: list[RuleResult], cwd: Path | None = None) -> str:
             lines.append(f"  = help: {r.fix.description}")
 
     return "\n".join(lines)
+
+
+def _format_text_color(results: list[RuleResult], cwd: Path | None) -> str:
+    """Render diagnostics with ANSI color via rich."""
+    import io
+
+    from rich.console import Console
+    from rich.text import Text
+
+    from docpact.model.diagnostic import Severity
+
+    sio = io.StringIO()
+    # width=10000 prevents rich from wrapping long lines.
+    console = Console(file=sio, highlight=False, no_color=False, width=10000)
+
+    for r in results:
+        path = r.location.file_path
+        if cwd is not None:
+            with contextlib.suppress(ValueError):
+                path = path.relative_to(cwd)
+
+        code_style = "bold red" if r.severity == Severity.ERROR else "bold yellow"
+
+        line = Text()
+        line.append(f"{path}:{r.location.line}:{r.location.column}: ")
+        line.append(r.code, style=code_style)
+        if r.fix is not None:
+            line.append(" [*]", style="bold cyan")
+        line.append(f" {r.message}")
+        console.print(line, end="\n")
+
+        if r.fix is not None:
+            help_line = Text()
+            help_line.append("  = help: ", style="dim")
+            help_line.append(r.fix.description, style="dim")
+            console.print(help_line, end="\n")
+
+    output = sio.getvalue()
+    # Console adds a trailing newline per print; strip to match format_text convention.
+    return output.rstrip("\n")
 
 
 def format_json(results: list[RuleResult], cwd: Path | None = None) -> str:

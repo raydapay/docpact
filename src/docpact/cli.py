@@ -277,6 +277,14 @@ def main() -> None:
     "--statistics", is_flag=True, help="Print per-rule violation counts after diagnostics."
 )
 @click.option(
+    "--color",
+    "color_mode",
+    type=click.Choice(["auto", "always", "never"]),
+    default="auto",
+    show_default=True,
+    help="Control ANSI color in text output.",
+)
+@click.option(
     "--no-respect-gitignore",
     "no_respect_gitignore",
     is_flag=True,
@@ -317,6 +325,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     no_config: bool,
     quiet: bool,
     statistics: bool,
+    color_mode: str,
     no_respect_gitignore: bool,
     add_suppression: bool,
     suppression_reason: str,
@@ -387,8 +396,9 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         sys.exit(0)
 
     cwd = Path.cwd()
+    use_color = color_mode == "always" or (color_mode == "auto" and sys.stdout.isatty())
     if output_format == "text":
-        text = format_text(visible, cwd=cwd)
+        text = format_text(visible, cwd=cwd, color=use_color)
         if text:
             click.echo(text)
         if statistics:
