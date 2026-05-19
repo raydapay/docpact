@@ -10,7 +10,7 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021, DOC050,
-DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002. 703 tests, 94% coverage.
+DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002. 720 tests, 94% coverage.
 DOC051 deferred (see "Deferred with reasoning" below).
 
 No active milestone.
@@ -54,6 +54,25 @@ Addressed 5 of 7 findings from external dry-run on a real FastAPI codebase.
 - `--config` flag for explicit pyproject.toml path.
 - `per-file-tier` glob anchoring to project root.
 Both pair naturally; deferred to a UX pass.
+
+### recon-app dry-run follow-up (round 2) — 2026-05-19
+
+Addressed 3 follow-up findings after round-1 push.
+
+**DOC021 — boolean capitalisation:**
+- `_normalize` now lowercases `True`/`False`/`None` so prose `false`/`true`/`none`
+  matches Python-canonical defaults. `Query(False)` + `"Defaults to false."` no
+  longer fires. Drift still fires when the value itself is wrong (e.g. `True` vs `false`).
+
+**DOC003 — per-file-tier = 1 silences class checks:**
+- `file_tier_override_for` added to `config.py` (and exported + tested).
+- `_run_checks` skips DOC003 when the file's first matching `per-file-tier` pattern
+  is `1`. Tier 2/3/4 and no-override files are unaffected.
+
+**CLI — comma-separated codes:**
+- `_expand_codes` splits comma-separated values in `--select`, `--ignore`,
+  `--extend-select`, `--extend-ignore` before processing.
+- Fixes `--select DOC021,DOC003` silently exiting 0 instead of running both rules.
 
 ### CLI ergonomics + rule maintenance — 2026-05-19
 
