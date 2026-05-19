@@ -145,7 +145,7 @@ def build_internal_graph(  # nodo: DOC012 -- internal; tier override not yet wir
 ```yaml
 repos:
   - repo: https://github.com/raydapay/docpact
-    rev: main
+    rev: v0.1.0a1
     hooks:
       - id: docpact
 ```
