@@ -8,7 +8,7 @@ Until now.
 
 Coding agents, MCP tools, and LLM clients read docstrings to decide what to call and how to call it. When the code changes and the docstring doesn't, they're working from a lie. A renamed parameter sends them to the wrong argument. A missing `Constraints` section leaves out the preconditions they need to call safely. The drift is invisible in review and silent at runtime — until something breaks in a way that's hard to trace.
 
-docpact is a CI-first structural linter for Python docstrings. It enforces docstring contracts the same way ruff enforces style and ty enforces types: as a gate that fails fast on drift.
+`docpact` is a CI-first structural linter for Python docstrings. It enforces docstring contracts the same way ruff enforces style and ty enforces types: as a gate that fails fast on drift.
 
 ```
 $ docpact check src/
@@ -64,7 +64,7 @@ Full rule documentation: [`docs/rules/`](docs/rules/).
 
 Not every function needs the same documentation depth. An internal helper needs a summary. An MCP tool needs `Constraints`, `Stability`, and `MCP` sections — because the agent calling it needs that context to call safely.
 
-docpact assigns tiers automatically from decorators and file structure:
+`docpact` assigns tiers automatically from decorators and file structure:
 
 | Tier | Audience | Required sections |
 |---|---|---|
@@ -85,7 +85,7 @@ Patterns are anchored to the directory containing `pyproject.toml`. `src/domain/
 
 ## Adopting in an existing codebase
 
-A codebase with hundreds of existing violations can't add docpact to CI cleanly without first silencing the backlog. The `--add-suppression` flag does this in one step:
+A codebase with hundreds of existing violations can't add `docpact` to CI cleanly without first silencing the backlog. The `--add-suppression` flag does this in one step:
 
 ```bash
 docpact check src/ --add-suppression
@@ -152,13 +152,13 @@ repos:
 
 ## Boundaries
 
-docpact checks structure, not meaning. A docstring that passes every check is not necessarily a good docstring. It is a *consistent* one: the Args match the signature, the required sections are present, the types don't contradict the prose. Content quality — whether the description is actually useful — is the author's responsibility.
+`docpact` checks structure, not meaning. A docstring that passes every check is not necessarily a good docstring. It is a *consistent* one: the Args match the signature, the required sections are present, the types don't contradict the prose. Content quality — whether the description is actually useful — is the author's responsibility.
 
 It does not replace ruff or ty. It does not import the code it analyzes. It does not perform LLM-based semantic analysis (designed in the spec, explicitly deferred).
 
 ## Status
 
-Self-hosting: docpact validates its own source on every commit. 774 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 774 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001.
 
