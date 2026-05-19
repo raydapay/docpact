@@ -54,6 +54,7 @@ from docpact.rules.doc.doc050_pydantic_field import check_pydantic_fields
 from docpact.rules.fix.fix001_bare_noqa import check_bare_noqa
 from docpact.rules.fix.fix002_no_reason import check_no_reason
 from docpact.rules.fix.fix003_stale_suppression import check_stale_suppressions
+from docpact.rules.parse.parse001_syntax_error import check_syntax_error as check_parse_syntax_error
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
 
@@ -142,7 +143,7 @@ def _expand_codes(codes: tuple[str, ...]) -> tuple[str, ...]:
 
 
 _FILE_LEVEL_CODES: frozenset[str] = frozenset(
-    {"FIX001", "FIX002", "FIX003", "DOC002", "DOC003", "DOC050"}
+    {"FIX001", "FIX002", "FIX003", "DOC002", "DOC003", "DOC050", "PARSE001"}
 )
 
 
@@ -214,7 +215,23 @@ def _run_checks(
 
         all_names = parse_all_names(source_text)
         source_lines = source_text.splitlines()
-        functions = extract_functions(file_path)
+
+        try:
+            functions = extract_functions(file_path)
+        except SyntaxError as exc:
+            if (
+                "PARSE001" in rules
+                and rule_is_enabled("PARSE001", "PARSE", config.select, config.ignore)
+                and not rule_is_file_ignored("PARSE001", "PARSE", extra_ignores)
+            ):
+                meta, _ = rules["PARSE001"]
+                severity = config.rule_severities.get("PARSE001", meta.default_severity)
+                if severity != Severity.OFF:
+                    cfg = RuleConfig(severity=severity, options={})
+                    file_results.append(check_parse_syntax_error(exc, file_path, cfg))
+            results.extend(file_results)
+            continue
+
         for func in functions:
             doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
             tier = assign_tier(func, config.tier_overrides, all_names=all_names, root=root)

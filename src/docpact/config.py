@@ -48,7 +48,7 @@ class Config:
 
     schema: str = "1"
     docstring_format: str = "google"
-    select: tuple[str, ...] = ("DOC", "MCP")
+    select: tuple[str, ...] = ("DOC", "MCP", "PARSE")
     ignore: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     heuristics_default: Severity = Severity.WARNING
@@ -91,7 +91,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
     """Build a Config from a raw [tool.docpact] or docpact.toml mapping."""
     schema: str = "1"
     docstring_format: str = "google"
-    select: tuple[str, ...] = ("DOC", "MCP")
+    select: tuple[str, ...] = ("DOC", "MCP", "PARSE")
     ignore: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     heuristics_default: Severity = Severity.WARNING
