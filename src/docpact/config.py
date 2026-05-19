@@ -23,6 +23,21 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
+class ConfigResult:
+    """Result of loading configuration, bundling the config and its root directory.
+
+    The root is the directory containing the config file that was found, or
+    the start directory passed to load_config when no config file exists.
+    It is used to anchor per-file glob patterns to the project root.
+
+    Stability: beta
+    """
+
+    config: Config
+    root: Path
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     """Resolved configuration.
 
@@ -200,18 +215,19 @@ def _get_docpact_section(raw: dict[str, object]) -> dict[str, object] | None:
     return docpact  # type: ignore[return-value]
 
 
-def load_config(start_path: Path) -> Config:
+def load_config(start_path: Path) -> ConfigResult:
     """Load configuration starting from a given path.
 
     Walks upward from start_path looking for docpact.toml, then for
-    pyproject.toml with a [tool.docpact] section. Returns a Config with
-    defaults applied if neither is found.
+    pyproject.toml with a [tool.docpact] section. Returns a ConfigResult
+    with defaults applied if neither is found.
 
     Args:
-        start_path: Directory to begin the upward walk.
+        start_path: Directory (or file) to begin the upward walk.
 
     Returns:
-        Fully-resolved Config.
+        ConfigResult whose root is the directory containing the config file,
+        or start_path (resolved to a directory) when no config is found.
 
     Raises:
         ConfigError: A configuration file was found but could not be
@@ -223,7 +239,8 @@ def load_config(start_path: Path) -> Config:
 
     Stability: beta
     """
-    current = start_path if start_path.is_dir() else start_path.parent
+    initial_dir = start_path if start_path.is_dir() else start_path.parent
+    current = initial_dir
 
     while True:
         docpact_toml = current / "docpact.toml"
@@ -245,17 +262,41 @@ def load_config(start_path: Path) -> Config:
 
         if found_docpact:
             raw = _load_toml(docpact_toml)
-            return _parse_section(raw)
+            return ConfigResult(config=_parse_section(raw), root=current)
 
         if docpact_section is not None:
-            return _parse_section(docpact_section)
+            return ConfigResult(config=_parse_section(docpact_section), root=current)
 
         parent = current.parent
         if parent == current:
             break
         current = parent
 
-    return Config()
+    return ConfigResult(config=Config(), root=initial_dir)
+
+
+def load_config_from(path: Path) -> ConfigResult:
+    """Load configuration from an explicit file path, bypassing discovery.
+
+    Args:
+        path: Path to a pyproject.toml or docpact.toml file.
+
+    Returns:
+        ConfigResult with root set to path.parent.
+
+    Raises:
+        ConfigError: The file could not be parsed or contained invalid values.
+
+    Stability: beta
+    """
+    root = path.parent
+    raw = _load_toml(path)
+    if path.name == "pyproject.toml":
+        section = _get_docpact_section(raw)
+        config = _parse_section(section) if section is not None else Config()
+    else:
+        config = _parse_section(raw)
+    return ConfigResult(config=config, root=root)
 
 
 def rule_is_enabled(
@@ -287,20 +328,31 @@ def rule_is_enabled(
 def file_ignores_for(
     file_path: Path,
     per_file_ignores: dict[str, tuple[str, ...]],
+    root: Path,
 ) -> frozenset[str]:
     """Return the set of suppressed rule selectors for a given file.
 
     Args:
         file_path: Absolute or relative path to check.
         per_file_ignores: Mapping of fnmatch patterns to suppressed codes.
+            Patterns are anchored to root (the project root directory).
+        root: Project root directory; patterns are matched relative to it.
 
     Returns:
         Frozenset of suppressed selectors applicable to this file.
     """
-    path_str = str(file_path)
+    abs_str = str(file_path)
+    try:
+        rel_str = str(file_path.relative_to(root))
+    except ValueError:
+        rel_str = abs_str
     result: set[str] = set()
     for pattern, codes in per_file_ignores.items():
-        if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(path_str, f"*/{pattern}"):
+        if (
+            fnmatch.fnmatch(rel_str, pattern)
+            or fnmatch.fnmatch(abs_str, pattern)
+            or fnmatch.fnmatch(abs_str, f"*/{pattern}")
+        ):
             result.update(codes)
     return frozenset(result)
 
@@ -322,40 +374,63 @@ def rule_is_file_ignored(code: str, namespace: str, ignores: frozenset[str]) -> 
     return any(code == p or namespace == p or code.startswith(p) for p in ignores)
 
 
-def file_tier_override_for(file_path: Path, tier_overrides: dict[str, int]) -> int | None:
+def file_tier_override_for(
+    file_path: Path,
+    tier_overrides: dict[str, int],
+    root: Path,
+) -> int | None:
     """Return the tier override for a file, or None if no pattern matches.
 
     Args:
         file_path: Absolute or relative path to check.
         tier_overrides: Mapping of fnmatch patterns to tier numbers.
+            Patterns are anchored to root (the project root directory).
+        root: Project root directory; patterns are matched relative to it.
 
     Returns:
         The tier number of the first matching pattern, or None.
     """
-    path_str = str(file_path)
+    abs_str = str(file_path)
+    try:
+        rel_str = str(file_path.relative_to(root))
+    except ValueError:
+        rel_str = abs_str
     for pattern, tier in tier_overrides.items():
-        if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(path_str, f"*/{pattern}"):
+        if (
+            fnmatch.fnmatch(rel_str, pattern)
+            or fnmatch.fnmatch(abs_str, pattern)
+            or fnmatch.fnmatch(abs_str, f"*/{pattern}")
+        ):
             return tier
     return None
 
 
-def file_is_excluded(file_path: Path, exclude: tuple[str, ...]) -> bool:
+def file_is_excluded(file_path: Path, exclude: tuple[str, ...], root: Path) -> bool:
     """Return True if a file matches any exclude pattern.
 
     Args:
         file_path: Path to test.
-        exclude: fnmatch glob patterns. A pattern ending with '/' is treated
-            as a directory prefix: "migrations/" matches any file whose path
-            contains that directory component.
+        exclude: fnmatch glob patterns anchored to root. A pattern ending
+            with '/' is treated as a directory prefix: "migrations/" matches
+            any file whose path contains that directory component.
+        root: Project root directory; patterns are matched relative to it.
 
     Returns:
         True when the file should be skipped.
     """
-    path_str = str(file_path)
+    abs_str = str(file_path)
+    try:
+        rel_str = str(file_path.relative_to(root))
+    except ValueError:
+        rel_str = abs_str
     for pattern in exclude:
         # Trailing '/' means "directory and all contents".
         effective = pattern.rstrip("/") + "/**" if pattern.endswith("/") else pattern
-        if fnmatch.fnmatch(path_str, effective) or fnmatch.fnmatch(path_str, f"*/{effective}"):
+        if (
+            fnmatch.fnmatch(rel_str, effective)
+            or fnmatch.fnmatch(abs_str, effective)
+            or fnmatch.fnmatch(abs_str, f"*/{effective}")
+        ):
             return True
     return False
 

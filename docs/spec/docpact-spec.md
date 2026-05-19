@@ -334,7 +334,26 @@ A stable plugin API is a v0.2+ candidate, gated on whether it can be defined wit
 
 ### 7.6 Semantic analyzer
 
-When implemented (post-v0.1), the semantic analyzer is architecturally isolated from the structural analyzer. It receives `(FunctionInfo, ParsedDocstring, SemanticConfig)` and returns `list[RuleResult]` with codes in the `SEM` namespace. It manages LLM API calls, rate limiting, caching (content-hash keyed), and cost control internally. The rule engine treats its output identically to structural results.
+When implemented (post-v0.1), the semantic analyzer is architecturally isolated from the structural analyzer. It emits `list[RuleResult]` with codes in the `SEM` namespace; the rule engine treats these identically to structural results (suppression, severity, and output routing all apply). It is never invoked by `docpact check` — only by `docpact semantic`.
+
+Two scan modes, each with its own input contract:
+
+- **Function-level:** receives `(FunctionInfo, ParsedDocstring, SemanticConfig)`. Context is self-contained — the function body and its docstring are sufficient.
+- **Module-level:** receives `(ModuleInfo, SemanticConfig, ProjectContext)`. Requires project-level context to judge whether a module docstring correctly situates the module in the architecture. `ProjectContext` is assembled once per run from the files listed in `[tool.docpact.semantic] context_files`.
+
+LLM I/O is abstracted behind an internal `SemanticBackend` protocol:
+
+```python
+class SemanticBackend(Protocol):
+    def complete(self, messages: list[dict[str, str]], model: str) -> str: ...
+```
+
+Concrete adapters ship with the `docpact[semantic]` extra:
+
+- `OpenAICompatBackend` — targets any OpenAI-compatible HTTP endpoint (OpenRouter, Cloudflare AI Gateway, Bifrost, Ollama, vLLM, private deployments). Requires only the `openai` SDK.
+- `AnyLLMBackend` — in-process routing via `any-llm-sdk`, which wraps official provider SDKs. Install provider extras explicitly: `docpact[semantic,anthropic]`, `docpact[semantic,openai]`, etc.
+
+The protocol seam means either adapter can be replaced without changing any calling code.
 
 ---
 
@@ -589,28 +608,53 @@ Operates on source files via AST and docstring parsing. No imports, no network a
 
 ### 12.2 Semantic mode (designed; not in v0.1)
 
-Sends docstring content to an LLM API for quality analysis. Requires API credentials. Designed for scheduled CI runs or pre-merge gates, never pre-commit.
+Invoked via `docpact semantic`. Never runs as part of `docpact check`. Requires explicit invocation and configured LLM credentials. Designed for scheduled CI runs (weekly, nightly) — not pre-commit, not a blocking merge gate by default.
 
-**Intended checks:**
-- Tool description distinguishability across tools in the same server
-- Parameter description completeness
-- Constraint precision (real-world conditions specific enough to act on)
-- Notes usefulness (actionable vs. boilerplate)
-- Alternatives completeness
+Emits `SEM`-namespaced `RuleResult` objects through the standard rule pipeline. Suppression (`# nodo: SEM001 -- reason`), severity configuration, `--changed-only`, and `--sample-rate` all work identically to structural mode.
 
-**Known risks (the reason for deferral):**
-- Non-determinism across runs and model versions
-- Cost at codebase scale
-- Prompt-version fragility breaking suppressions
-- Reduced trust in LLM-as-judge findings
+#### Two scan modes
 
-**Mitigation candidates (not finalized):**
-- Content-hash caching keyed on `(docstring_hash, prompt_version, model_id)`
-- Snapshot baseline file (`.docpact.snapshots.json`) under version control; semantic findings compared against the baseline rather than absolute
-- `--sample-rate` and `--changed-only` for cost containment
-- Warning severity by default; errors only when explicitly opted into
+**Function-level** evaluates docstring content against the function body. Context is self-contained — no project-level files needed. Rubric dimensions (categorical verdicts: `good` / `weak` / `missing`):
 
-When semantic mode ships, it ships off by default. The full design is preserved in this specification because the structural-mode design depends on its eventual existence (the rule engine architecture, namespace allocation, and severity model all account for `SEM` rules).
+| Dimension | Question |
+|---|---|
+| Summary accuracy | Does it describe what the function *does*, not restate the name? |
+| Args signal | Do descriptions add information beyond what the type annotation already states? |
+| Returns meaning | Does it explain what the value *means*, not just its type? |
+| Contracts | Are non-obvious preconditions, side effects, and error conditions documented? |
+
+Cache key: `(function_content_hash, prompt_version, model_id)`.
+
+**Module-level** evaluates whether a module docstring correctly situates the module in the project. Requires project-level context. Rubric dimensions:
+
+| Dimension | Question |
+|---|---|
+| Scope accuracy | Does the description match what the module actually contains — neither too narrow nor too broad? |
+| Orientation | Does it help a reader decide when and why to use this module vs. sibling modules? |
+
+Cache key: `(file_content_hash, project_context_hash, prompt_version, model_id)`. The `project_context_hash` covers all files in `context_files` — a change to any of them invalidates module-level cache entries even if the module itself did not change. Module-level scan should therefore run less frequently than function-level (or be triggered by changes to `context_files`).
+
+A finding is emitted when any rubric dimension scores `missing`. `weak` is reported as a warning by default. Both thresholds are configurable (see §15.1).
+
+#### Backend architecture
+
+LLM I/O is abstracted behind an internal `SemanticBackend` protocol (see §7.6). Two adapters ship with `docpact[semantic]`:
+
+- **`openai-compat`** — targets any OpenAI-compatible HTTP endpoint. Covers OpenRouter, Cloudflare AI Gateway, Bifrost, Ollama, vLLM, and any private deployment. Requires only the `openai` SDK.
+- **`any-llm`** — in-process routing via `any-llm-sdk`, which wraps official provider SDKs. No proxy infrastructure required. Provider extras installed explicitly: `docpact[semantic,anthropic]`, `docpact[semantic,openai]`, etc.
+
+#### Known risks and mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Non-determinism across runs | Categorical verdicts (`good`/`weak`/`missing`), not floats; `temperature=0` |
+| Prompt-version fragility | Cache key includes `prompt_version`; changing the prompt invalidates prior entries |
+| Cost at scale | Content-hash caching; `--changed-only`; `--sample-rate` |
+| Reduced trust in LLM-as-judge | Warning severity by default; findings are advisory until opted into error |
+
+**Unresolved:** suppression of SEM findings across prompt-version changes (snapshot-baseline approach is a candidate but not finalised). Prompt versioning scheme TBD.
+
+When semantic mode ships, it ships off by default. `docpact check` is never affected. The rule engine architecture, namespace allocation, and severity model already account for `SEM` rules.
 
 ### 12.3 Heuristic rules (`HEUR` namespace)
 
@@ -819,6 +863,36 @@ HEUR001 = "off"
 # Pydantic field documentation severity.
 [tool.docpact.pydantic]
 undescribed_fields = "warning"  # error | warning | off
+
+# Semantic scan configuration (docpact[semantic] required).
+[tool.docpact.semantic]
+# Backend adapter: "openai-compat" | "any-llm"
+backend = "openai-compat"
+
+# Model string — interpreted by the backend.
+# openai-compat: passed as-is to the HTTP endpoint.
+# any-llm: "provider/model" format, e.g. "anthropic/claude-sonnet-4-6".
+model = "anthropic/claude-sonnet-4-6"
+
+# Name of the environment variable holding the API key. Never the key itself.
+api_key_env = "ANTHROPIC_API_KEY"
+
+# Base URL for openai-compat backends. Required when backend = "openai-compat".
+# api_base = "https://openrouter.ai/api/v1"
+# api_base = "http://localhost:8080"   # Bifrost or other local gateway
+# api_base = "http://localhost:11434/v1"  # Ollama
+
+# Project-level context files for module-level scan.
+# Relative to the project root. Directories pull in *.md files recursively.
+context_files = ["README.md", "CLAUDE.md", "docs/"]
+
+# Scan modes to run: "function" | "module" | both.
+scan_modes = ["function"]
+
+# Verdict threshold that triggers a finding.
+# "missing": error only when a dimension verdict is "missing".
+# "weak":    warning on "weak", error on "missing".
+finding_threshold = "missing"
 ```
 
 ### 15.2 Inline suppression
@@ -854,6 +928,7 @@ Error codes with `[*]` suffix indicate a fix is available.
 
 ```
 docpact check    [OPTIONS] [FILES_OR_DIRS]...
+docpact semantic [OPTIONS] [FILES_OR_DIRS]...
 docpact generate [OPTIONS] [FILES_OR_DIRS]...
 docpact show-schema [--tier {1,2,3,4}]
 docpact list-rules  [--format {text,json}]
@@ -875,8 +950,20 @@ docpact list-rules  [--format {text,json}]
 
 ```
   --watch                     Re-run on file changes.
-  --semantic                  Enable semantic mode (when available).
-  --changed-only              Semantic mode: changed functions only.
+```
+
+### `semantic` (post-v0.1)
+
+Runs LLM-based semantic analysis. Requires `docpact[semantic]` and configured credentials. See §12.2 for full design. Never shares a code path with `check`.
+
+```
+  --scan-modes {function,module}  Scan modes to run. Overrides config. Default: ["function"].
+  --changed-only REF              Restrict to .py files changed relative to REF.
+  --sample-rate FLOAT             Fraction of eligible units to analyse (0.0–1.0). For cost control.
+  --format {text,json}            Output format. Default: text.
+  --dry-run                       Show what would be analysed without calling the LLM backend.
+  --select CODES                  SEM rule codes or prefixes to enable.
+  --ignore CODES                  SEM rule codes or prefixes to disable.
 ```
 
 ### `generate`
@@ -940,6 +1027,33 @@ jobs:
 ```yaml
 - run: uv run pytest src/ --docpact --tb=short
 ```
+
+### 17.5 GitHub Actions — scheduled semantic scan
+
+Wire `docpact semantic` to a schedule trigger, not `push` or `pull_request`. It is not a merge gate by default.
+
+```yaml
+name: docpact-semantic
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"  # weekly, Monday 03:00 UTC
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  semantic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for --changed-only
+      - uses: astral-sh/setup-uv@v3
+      - run: uv tool run docpact semantic src/ --changed-only origin/main
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+Module-level scan should run at a lower frequency (monthly or on changes to `context_files`) due to higher caching cost (see §12.2). Add `--scan-modes module` in a separate job or a separate workflow.
 
 ---
 

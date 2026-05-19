@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 def _parser_for(info: FunctionInfo) -> GoogleParser | NumpyParser:
     """Return the parser configured for the file containing info."""
-    config = load_config(info.file_path.parent)
+    config = load_config(info.file_path.parent).config
     return NumpyParser() if config.docstring_format == "numpy" else GoogleParser()
 
 
@@ -95,8 +95,8 @@ def assert_tier(func: Callable[..., object], expected_tier: int) -> None:
     Stability: stable
     """
     info = _locate(func)
-    config = load_config(info.file_path.parent)
-    actual = assign_tier(info, config.tier_overrides)
+    result = load_config(info.file_path.parent)
+    actual = assign_tier(info, result.config.tier_overrides, root=result.root)
     if actual != expected_tier:
         raise AssertionError(
             f"{_qualname(func)!r} is Tier {actual}, expected Tier {expected_tier}."

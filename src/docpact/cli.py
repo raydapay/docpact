@@ -25,10 +25,12 @@ from docpact.baseline import diff_suppressions as baseline_diff
 from docpact.config import (
     Config,
     ConfigError,
+    ConfigResult,
     file_ignores_for,
     file_is_excluded,
     file_tier_override_for,
     load_config,
+    load_config_from,
     rule_is_enabled,
     rule_is_file_ignored,
 )
@@ -94,17 +96,17 @@ def _get_changed_py_files(ref: str, cwd: Path) -> set[Path]:
     return changed
 
 
-def _collect_py_files(paths: tuple[str, ...], config: Config) -> list[Path]:
+def _collect_py_files(paths: tuple[str, ...], config: Config, root: Path) -> list[Path]:
     """Expand path arguments to a sorted list of .py files, honouring exclude patterns."""
     result: list[Path] = []
     for p in paths:
         path = Path(p)
         if path.is_dir():
             for f in sorted(path.rglob("*.py")):
-                if not file_is_excluded(f, config.exclude):
+                if not file_is_excluded(f, config.exclude, root):
                     result.append(f)
         else:
-            if not file_is_excluded(path, config.exclude):
+            if not file_is_excluded(path, config.exclude, root):
                 result.append(path)
     return result
 
@@ -147,6 +149,7 @@ _FILE_LEVEL_CODES: frozenset[str] = frozenset(
 def _run_checks(
     py_files: list[Path],
     config: Config,
+    root: Path,
 ) -> tuple[list[RuleResult], dict[Path, dict[int, frozenset[str]]]]:
     """Run all enabled rules over the given files and return results with suppression maps."""
     parser: GoogleParser | NumpyParser = (
@@ -160,7 +163,7 @@ def _run_checks(
         source_text = file_path.read_text(errors="replace")
         file_suppressions = parse_suppressions(source_text, markers=config.suppress_comment)
         suppressions[file_path] = file_suppressions
-        extra_ignores = file_ignores_for(file_path, config.per_file_ignores)
+        extra_ignores = file_ignores_for(file_path, config.per_file_ignores, root)
 
         # Accumulate per-file so FIX003 can inspect the full violation set.
         file_results: list[RuleResult] = []
@@ -204,7 +207,7 @@ def _run_checks(
                 case "DOC003":
                     # per-file-tier = 1 silences DOC003 for classes in that file,
                     # consistent with how tier 1 silences function-level rules.
-                    if file_tier_override_for(file_path, config.tier_overrides) != 1:
+                    if file_tier_override_for(file_path, config.tier_overrides, root) != 1:
                         file_results.extend(check_class_docstrings(source_text, file_path, cfg))
                 case "DOC050":
                     file_results.extend(check_pydantic_fields(source_text, file_path, cfg))
@@ -214,7 +217,7 @@ def _run_checks(
         functions = extract_functions(file_path)
         for func in functions:
             doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
-            tier = assign_tier(func, config.tier_overrides, all_names=all_names)
+            tier = assign_tier(func, config.tier_overrides, all_names=all_names, root=root)
             if config.allow_pragma:
                 line_text = (
                     source_lines[func.line - 1] if 0 < func.line <= len(source_lines) else ""
@@ -310,6 +313,14 @@ def main() -> None:
     help="Add rule codes or prefixes to the config's ignore set.",
 )
 @click.option(
+    "--config",
+    "config_path",
+    default=None,
+    metavar="PATH",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Explicit path to pyproject.toml or docpact.toml; bypasses discovery.",
+)
+@click.option(
     "--no-config", "no_config", is_flag=True, help="Ignore all configuration files; use defaults."
 )
 @click.option(
@@ -371,6 +382,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     cli_ignore: tuple[str, ...],
     cli_extend_select: tuple[str, ...],
     cli_extend_ignore: tuple[str, ...],
+    config_path: Path | None,
     no_config: bool,
     quiet: bool,
     statistics: bool,
@@ -386,9 +398,16 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         raise click.UsageError("--unsafe-fixes requires --fix")
 
     try:
-        config = Config() if no_config else load_config(Path.cwd())
+        if no_config:
+            cfg_result = ConfigResult(config=Config(), root=Path.cwd())
+        elif config_path is not None:
+            cfg_result = load_config_from(config_path)
+        else:
+            cfg_result = load_config(Path.cwd())
     except ConfigError as exc:
         raise click.UsageError(str(exc)) from exc
+    config = cfg_result.config
+    config_root = cfg_result.root
 
     cli_select = _expand_codes(cli_select)
     cli_ignore = _expand_codes(cli_ignore)
@@ -404,13 +423,13 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     if cli_extend_ignore:
         config = dataclasses.replace(config, ignore=(*config.ignore, *cli_extend_ignore))
 
-    py_files = _collect_py_files(paths, config)
+    py_files = _collect_py_files(paths, config, config_root)
     if config.respect_gitignore and not no_respect_gitignore:
         py_files = _filter_gitignored(py_files, Path.cwd())
     if changed_only is not None:
         changed_set = _get_changed_py_files(changed_only, Path.cwd())
         py_files = [f for f in py_files if f.resolve() in changed_set]
-    results, suppressions = _run_checks(py_files, config)
+    results, suppressions = _run_checks(py_files, config, config_root)
 
     apply_unsafe = unsafe_fixes and do_fix
 
@@ -427,7 +446,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             click.echo(f"warning: {conflict}", err=True)
         # Re-run checks on modified files so reported results reflect post-fix state.
         if modified:
-            results, suppressions = _run_checks(py_files, config)
+            results, suppressions = _run_checks(py_files, config, config_root)
 
     # Apply inline suppressions before output and exit-code evaluation.
     visible = apply_suppressions(results, suppressions)
@@ -498,15 +517,19 @@ def generate(  # nodo: DOC012 -- click params; Args section would duplicate --he
 ) -> None:
     """Generate stub docstrings for undocumented functions."""
     try:
-        config = Config() if no_config else load_config(Path.cwd())
+        cfg_result = (
+            ConfigResult(config=Config(), root=Path.cwd()) if no_config else load_config(Path.cwd())
+        )
     except ConfigError as exc:
         raise click.UsageError(str(exc)) from exc
+    config = cfg_result.config
+    config_root = cfg_result.root
     # Only DOC001 produces stubs; no other rule should drive generation.
     stub_config = dataclasses.replace(config, select=("DOC001",), ignore=())
-    py_files = _collect_py_files(paths, stub_config)
+    py_files = _collect_py_files(paths, stub_config, config_root)
     if stub_config.respect_gitignore:
         py_files = _filter_gitignored(py_files, Path.cwd())
-    results, suppressions = _run_checks(py_files, stub_config)
+    results, suppressions = _run_checks(py_files, stub_config, config_root)
     visible = apply_suppressions(results, suppressions)
 
     if diff:

@@ -13,6 +13,8 @@ import fnmatch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from docpact.model.function_info import FunctionInfo
 
 
@@ -43,6 +45,7 @@ def assign_tier(
     tier_overrides: dict[str, int] | None = None,
     *,
     all_names: frozenset[str] | None = None,
+    root: Path | None = None,
 ) -> int:
     """Determine the tier of a function.
 
@@ -57,6 +60,9 @@ def assign_tier(
             None if the module does not define __all__. When provided, this
             is the authoritative visibility contract for module-level functions
             (not for methods, which are accessed through their class).
+        root: Project root directory used to anchor glob patterns. When
+            provided, patterns are matched against the path relative to root
+            before falling back to absolute-path matching.
 
     Returns:
         Tier number, 1-4.
@@ -73,11 +79,17 @@ def assign_tier(
 
     # Rule 2: Explicit file-level tier override from configuration.
     if tier_overrides:
-        path_str = str(func.file_path)
+        abs_str = str(func.file_path)
+        try:
+            rel_str = str(func.file_path.relative_to(root)) if root else abs_str
+        except ValueError:
+            rel_str = abs_str
         for pattern, tier_num in tier_overrides.items():
-            # Match against the full path or with a leading wildcard so that
-            # relative patterns like "src/routes.py" match absolute paths.
-            if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(path_str, f"*/{pattern}"):
+            if (
+                fnmatch.fnmatch(rel_str, pattern)
+                or fnmatch.fnmatch(abs_str, pattern)
+                or fnmatch.fnmatch(abs_str, f"*/{pattern}")
+            ):
                 return tier_num
 
     # Rule 3: __all__ is the definitive public API contract for module-level
