@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+from docpact.fix import apply_fixes
 from docpact.model.diagnostic import Severity
 from docpact.model.function_info import FunctionInfo
 from docpact.model.parsed_docstring import ParsedDocstring, Section, SectionEntry
@@ -133,3 +134,92 @@ def test_section_body_whitespace_only_fires(tmp_path: Path) -> None:
     sections = {"Raises": Section(name="Raises", body="   ")}
     results = check(_func(tmp_path / "t.py"), _doc(sections), _cfg())
     assert len(results) == 1
+
+
+# ---------------------------------------------------------------------------
+# Fix: non-empty non-canonical bodies produce a Fix; empty bodies do not
+# ---------------------------------------------------------------------------
+
+
+def _func_with_offsets(path: Path, raw: str, start_offset: int) -> FunctionInfo:
+    """Build a FunctionInfo where the docstring is at a known byte offset."""
+    return FunctionInfo(
+        name="foo",
+        file_path=path,
+        line=1,
+        column=0,
+        parameters=(),
+        return_annotation=None,
+        decorators=(),
+        docstring_raw=raw,
+        docstring_line=1,
+        containing_class=None,
+        def_start_offset=0,
+        def_end_offset=start_offset,
+        docstring_start_offset=start_offset,
+        docstring_end_offset=start_offset + 3 + len(raw.encode("utf-8")) + 3,
+    )
+
+
+def _doc_from_raw(raw: str, sections: dict[str, Section]) -> ParsedDocstring:
+    return ParsedDocstring(summary="Summary.", description=None, sections=sections, raw=raw)
+
+
+def test_fix_na_replaces_body(tmp_path: Path) -> None:
+    """Fix for N/A body writes 'None.' at the correct source offset."""
+    src = tmp_path / "t.py"
+    raw = "Summary.\n\n    Raises:\n        N/A\n    "
+    source = f'def foo():\n    """{raw}"""\n'
+    src.write_text(source)
+
+    start = source.index('"""')
+    func = _func_with_offsets(src, raw, start)
+    sections = {"Raises": Section(name="Raises", body="N/A")}
+    results = check(func, _doc_from_raw(raw, sections), _cfg())
+
+    assert len(results) == 1
+    assert results[0].fix is not None
+    assert results[0].fix.replacement == "None."
+
+    apply_fixes(results)
+    modified = src.read_text()
+    assert "N/A" not in modified
+    assert "None." in modified
+
+
+def test_fix_none_without_period_replaces_body(tmp_path: Path) -> None:
+    """Fix for 'None' (no period) body writes 'None.' at the correct offset."""
+    src = tmp_path / "t.py"
+    raw = "Summary.\n\n    Constraints:\n        None\n    "
+    source = f'def foo():\n    """{raw}"""\n'
+    src.write_text(source)
+
+    start = source.index('"""')
+    func = _func_with_offsets(src, raw, start)
+    sections = {"Constraints": Section(name="Constraints", body="None")}
+    results = check(func, _doc_from_raw(raw, sections), _cfg())
+
+    assert len(results) == 1
+    apply_fixes(results)
+    assert "None." in src.read_text()
+
+
+def test_fix_not_produced_for_blank_body(tmp_path: Path) -> None:
+    """Blank/None body produces a diagnostic but no fix (no text to locate)."""
+    sections = {"Raises": Section(name="Raises", body="")}
+    results = check(_func(tmp_path / "t.py"), _doc(sections), _cfg())
+    assert len(results) == 1
+    assert results[0].fix is None
+
+
+def test_fix_not_produced_without_docstring_offset(tmp_path: Path) -> None:
+    """When docstring_start_offset is None, no fix is emitted."""
+    sections = {"Raises": Section(name="Raises", body="N/A")}
+    # _func() builds a FunctionInfo with docstring_start_offset=20 (fixed test value).
+    # Override with None to simulate the no-offset case.
+    import dataclasses
+
+    func = dataclasses.replace(_func(tmp_path / "t.py"), docstring_start_offset=None)
+    results = check(func, _doc(sections), _cfg())
+    assert len(results) == 1
+    assert results[0].fix is None

@@ -113,9 +113,9 @@ def test_ty002_metadata() -> None:
     assert meta.fixable is False
 
 
-def test_doc013_not_fixable() -> None:
+def test_doc013_is_fixable() -> None:
     meta, _ = all_rules()["DOC013"]
-    assert meta.fixable is False
+    assert meta.fixable is True
 
 
 def test_doc051_not_fixable() -> None:
