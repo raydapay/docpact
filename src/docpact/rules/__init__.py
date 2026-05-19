@@ -45,7 +45,6 @@ def load_builtin_rules() -> None:
     import docpact.rules.doc.doc014_suspicious_param
     import docpact.rules.doc.doc021_default_drift
     import docpact.rules.doc.doc050_pydantic_field
-    import docpact.rules.doc.doc051_annotated_constraint
     import docpact.rules.doc.doc098_doctest_exception
     import docpact.rules.doc.doc099_fill_marker
     import docpact.rules.fix.fix001_bare_noqa

@@ -164,6 +164,30 @@ Commits: `db3ae18`, `4c5c8f1`
   of a pytest plugin is low unless the target user base explicitly needs IDE
   inline-diagnostics or per-function contract tests. Revisit if adopters request it.
 
+- **DOC051 — Constraints section duplicates Annotated metadata**
+  The conceptual distinction is correct: type-expressible constraints (`MaxLen(N)`,
+  `Ge(N)`, `Le(N)`, regex patterns, nullability) belong in `Annotated[T, ...]` or
+  `Literal[...]`, not re-stated in prose where they can drift out of sync with the
+  annotation. The `Constraints:` section is for external-world considerations —
+  business rules, SLAs, ADR references, operational limits, deployment risks — that
+  the type system cannot encode.
+
+  **Why deferred:** The shipped heuristic (extract numeric values from `MaxLen`,
+  `Ge`, etc.; check if that number appears anywhere in the Constraints body) is too
+  coarse. Legitimate Constraints entries often cite the same number as the annotation
+  but for a different reason: the annotation enforces the technical bound, the
+  Constraints entry names the business source ("4096 per API contract — see ADR-012").
+  A numeric substring match cannot distinguish these cases, so the rule produces
+  false positives on well-written docstrings.
+
+  **To implement correctly:** needs semantic matching — comparing what the annotation
+  constraint *means* against what the Constraints prose *says*, not raw numeric
+  presence. Candidate approaches: AST-level structured comparison, NLP phrase
+  similarity, or requiring a structured Constraints format. None are ready.
+
+  **Code DOC051 is reserved.** The rule will ship under that code when a
+  sufficiently precise detector exists.
+
 ---
 
 ## v0.3 scope

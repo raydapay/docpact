@@ -175,6 +175,8 @@ Rationale: structural mode delivers the core differentiator (deterministic enfor
 
 ### 5.3 Deferred with reasoning
 
+**DOC051 — Annotated constraint duplication** — The rule is conceptually sound (type-expressible constraints belong in `Annotated[T, ...]`, not duplicated in Constraints prose), but the numeric-substring heuristic is too coarse and produces false positives on legitimate code where the same value appears in both contexts for different reasons. The code DOC051 is reserved. See PROGRESS.md for the full rationale.
+
 **pytest plugin** — `docpact[pytest]` extra declared; `docpact.testing` programmatic API ships in v0.1 (§14.1).
 
 Deferred from v0.2: docpact is primarily a CI tool. In a CI-primary workflow, `docpact check src/` surfaces failures at exactly the same pipeline stage as `pytest`. The incremental value of a pytest plugin is low unless there is demand for IDE inline-diagnostics or per-function contract tests in the pytest output. The design is preserved in §14.2. Revisit if adopters request it.
@@ -383,7 +385,7 @@ One or more usage examples. Valid Python expressions are run as doctests when `-
 
 Real-world conditions outside the type system — operational context, scale, resource expectations, dependencies, risk factors, and behavioral guarantees — that affect when, whether, or how this function can be safely called or modified.
 
-This section is for considerations a coding agent or human reviewer must weigh when deciding to call, refactor, or replace the function. **It is not for preconditions expressible as type constraints.** If a constraint can be encoded as `Annotated[T, ...]`, a Pydantic `Field` validator, or `Literal[...]`, it belongs in the type, not here. Duplication is reported as `DOC051`.
+This section is for considerations a coding agent or human reviewer must weigh when deciding to call, refactor, or replace the function. **It is not for preconditions expressible as type constraints.** If a constraint can be encoded as `Annotated[T, ...]`, a Pydantic `Field` validator, or `Literal[...]`, it belongs in the type, not here. Duplication will be reported as `DOC051` (deferred — see §5.3).
 
 Examples of what belongs in Constraints:
 
@@ -542,7 +544,7 @@ Applies fixes that are unambiguous and do not alter semantic content:
 | Summary begins with "This function" / "This method" | Remove the prefix, capitalize next word |
 | Trailing whitespace in docstring lines | Remove |
 | Empty section with non-canonical form (`DOC013`) | Replace with `None.` |
-| Constraint duplicates `Annotated` metadata (`DOC051`) | Remove the duplicating prose entry |
+| Constraint duplicates `Annotated` metadata (`DOC051`, deferred) | Remove the duplicating prose entry |
 
 Conditions where `--fix` reports an error and does not apply a fix:
 
@@ -578,7 +580,7 @@ Operates on source files via AST and docstring parsing. No imports, no network a
 - Stability field validity
 - Summary line heuristics (length, prohibited prefixes, imperative mood detection)
 - Constraint section presence on Tier 3 functions
-- `Annotated` constraint duplication in Constraints prose (`DOC051`)
+- `Annotated` constraint duplication in Constraints prose (`DOC051`, deferred — see §5.3)
 - Pydantic model fields missing `Field(description=...)` (`DOC050`)
 
 **Performance target:** < 2 seconds on a 50,000-line codebase.
@@ -662,7 +664,7 @@ Consuming ty's type-graph output (e.g., `--ty-output path/to/ty.json`) to cross-
 
 `Annotated[T, ...]` and Pydantic `Field(description=..., ...)` are structured, machine-readable specifications at the type level. They are the canonical home for any constraint that can be expressed as a property of a value.
 
-The rule is one-way: any constraint expressible in `Annotated` or `Field` belongs there, not in the docstring `Constraints` section. `DOC051` enforces this — if a docstring constraint duplicates `Annotated` metadata (length, range, pattern, enum), the duplicating prose entry is removed by `--fix`.
+The rule is one-way: any constraint expressible in `Annotated` or `Field` belongs there, not in the docstring `Constraints` section. `DOC051` is designed to enforce this — deferred until a detector more precise than numeric-value heuristics is available (see §5.3).
 
 For Pydantic model parameters specifically:
 
@@ -1053,7 +1055,7 @@ Does NOT belong in Constraints — use the type system instead:
 - Enumerated values → use `Literal[...]`
 - "Must be a valid X string" where X is a syntactic property
 
-Duplication is reported as DOC051 and removed by `--fix`.
+Duplication will be reported as DOC051 (deferred — see §5.3).
 
 **Decorator and docstring MCP section are mutually exclusive.** If both are
 present, `docpact` reports MCP001. Safe resolution: remove the docstring MCP
@@ -1150,7 +1152,7 @@ def parse_filter_expression(
     ...
 ```
 
-Note: the max-length constraint lives in `Annotated[str, MaxLen(4096)]`, not in the docstring. Putting it in both would emit `DOC051`.
+Note: the max-length constraint lives in `Annotated[str, MaxLen(4096)]`, not in the docstring. Putting it in both is the pattern `DOC051` will catch (deferred — see §5.3).
 
 ---
 
@@ -1248,13 +1250,8 @@ def search_documents(...) -> list[SearchResult]:
 ```
 src/tools/search.py:14:5: DOC012  Tier 3 function missing required section: Constraints
 src/tools/search.py:14:5: DOC007  Parameter 'include_metadata' in signature but absent from Args
-src/tools/search.py:14:5: DOC051 [*] Constraint duplicates Annotated metadata: "max length 4096"
-                                      already expressed by Annotated[str, MaxLen(4096)]
-  = help: run --fix to remove duplicating prose entry
 
-src/tools/search.py:14:5: MCP001 [*] Both decorator description= and docstring MCP: section
-                                      present with different content
-  = help: run --unsafe-fixes to remove docstring MCP: section (decorator takes precedence)
+src/tools/search.py:14:5: MCP001  Both decorator description= and docstring MCP: section present
 
 src/tools/legacy.py:88:1: DOC001 [*] Tier 2 function missing docstring
   = help: run --fix to insert a stub docstring

@@ -48,7 +48,6 @@ def test_all_builtin_rules_registered() -> None:
         "DOC013",
         "DOC014",
         "DOC050",
-        "DOC051",
         "DOC098",
         "DOC099",
         "FIX001",
@@ -116,11 +115,6 @@ def test_ty002_metadata() -> None:
 def test_doc013_is_fixable() -> None:
     meta, _ = all_rules()["DOC013"]
     assert meta.fixable is True
-
-
-def test_doc051_not_fixable() -> None:
-    meta, _ = all_rules()["DOC051"]
-    assert meta.fixable is False
 
 
 # ---------------------------------------------------------------------------

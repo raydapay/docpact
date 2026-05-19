@@ -168,7 +168,6 @@ def test_list_rules_text_contains_all_codes() -> None:
         "DOC012",
         "DOC013",
         "DOC014",
-        "DOC051",
         "DOC099",
         "FIX001",
         "MCP001",
