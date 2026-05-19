@@ -177,6 +177,10 @@ Steps 1–3 can be done in any order; all three must be complete before step 4 c
 
 ---
 
+## Spec update
+
+`docs/spec/docpact-spec.md` §15.2 (suppression parsing) may describe the current text-scan behavior. After implementing the fix, verify whether that section's language implies a text scan or is agnostic. If it says anything about comments vs. string literals, update it. Confirm with Ray — spec edits are stop-and-ask per CLAUDE.md.
+
 ## Verification
 
 `make verify` passes when:

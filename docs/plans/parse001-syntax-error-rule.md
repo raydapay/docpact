@@ -159,6 +159,10 @@ select = ["DOC", "MCP", "FIX", "TY", "PARSE"]
 
 ---
 
+## Spec update
+
+`docs/spec/docpact-spec.md` needs a new section or entry for the PARSE namespace and PARSE001. At minimum, add it to the rule registry table (§18 or wherever existing rules are enumerated) and note that PARSE rules fire before structural analysis. Confirm with Ray before editing the spec — per CLAUDE.md, spec changes are stop-and-ask territory.
+
 ## Docs
 
 Run `make docs` after all code changes. It auto-generates `docs/rules/PARSE001.md`. Commit the generated file — `make verify` (docs-check step) will fail if it's missing.
