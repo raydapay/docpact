@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -244,3 +245,103 @@ def test_list_rules_shows_ty_namespace() -> None:
     result = _run("list-rules")
     assert "TY001" in result.output  # type: ignore[union-attr]
     assert "TY002" in result.output  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# --changed-only
+# ---------------------------------------------------------------------------
+
+
+def _init_git_repo(path: Path) -> None:
+    """Initialise a minimal git repo at path."""
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@t.com"], cwd=path, check=True, capture_output=True
+    )
+    subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True, capture_output=True)
+
+
+def test_changed_only_restricts_to_changed_files() -> None:
+    """Only files changed since the ref are checked; unchanged clean files are skipped."""
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        td_path = Path(td)
+        _init_git_repo(td_path)
+        (td_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+
+        # Initial commit: a clean file with no violations.
+        (td_path / "clean.py").write_text('"""Module."""\ndef foo() -> None:\n    """Do foo."""\n')
+        subprocess.run(["git", "add", "."], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=td, check=True, capture_output=True)
+
+        # Second commit: a file with DOC001.
+        (td_path / "bad.py").write_text("def bar(x: int) -> None:\n    pass\n")
+        subprocess.run(["git", "add", "bad.py"], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "add bad"], cwd=td, check=True, capture_output=True)
+
+        result = runner.invoke(
+            main,
+            ["check", "--changed-only", "HEAD~1", str(td_path)],
+            catch_exceptions=False,
+        )
+    assert result.exit_code == 1
+    assert "bad.py" in result.output
+    assert "clean.py" not in result.output
+
+
+def test_changed_only_no_changed_files_exits_zero() -> None:
+    """When no collected files match the changed set, the command exits 0."""
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        td_path = Path(td)
+        _init_git_repo(td_path)
+        (td_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+
+        (td_path / "clean.py").write_text('"""Module."""\ndef foo() -> None:\n    """Do foo."""\n')
+        subprocess.run(["git", "add", "."], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=td, check=True, capture_output=True)
+
+        # Nothing changed since HEAD — py_files filtered to empty.
+        result = runner.invoke(
+            main,
+            ["check", "--changed-only", "HEAD", str(td_path)],
+            catch_exceptions=False,
+        )
+    assert result.exit_code == 0
+
+
+def test_changed_only_not_in_git_repo_exits_with_error(tmp_path: Path) -> None:
+    """Outside a git repo, --changed-only exits non-zero with a clear message."""
+    src = tmp_path / "t.py"
+    src.write_text("def foo(): pass\n")
+    runner = CliRunner()
+    # isolated_filesystem is a plain directory, not a git repo.
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        result = runner.invoke(
+            main,
+            ["check", "--changed-only", "main", str(src)],
+        )
+    assert result.exit_code != 0
+    assert (
+        "git" in result.output.lower()
+        or "git" in (result.output + (result.exception or "")).lower()
+    )
+
+
+def test_changed_only_invalid_ref_exits_with_error() -> None:
+    """An unresolvable git ref causes a non-zero exit with a clear message."""
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        td_path = Path(td)
+        _init_git_repo(td_path)
+        (td_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        (td_path / "t.py").write_text("def foo(): pass\n")
+        subprocess.run(["git", "add", "."], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=td, check=True, capture_output=True)
+
+        result = runner.invoke(
+            main,
+            ["check", "--changed-only", "no-such-ref-xyz", str(td_path)],
+        )
+    assert result.exit_code != 0

@@ -12,6 +12,7 @@ Implementation notes:
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -47,6 +48,39 @@ load_builtin_rules()
 
 if TYPE_CHECKING:
     from docpact.model.diagnostic import RuleResult
+
+
+def _get_changed_py_files(ref: str, cwd: Path) -> set[Path]:
+    """Return resolved absolute paths of .py files changed relative to a git ref."""
+    root_result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    if root_result.returncode != 0:
+        raise click.UsageError(
+            f"--changed-only requires a git repository: {root_result.stderr.strip()}"
+        )
+    git_root = Path(root_result.stdout.strip())
+
+    diff_result = subprocess.run(
+        ["git", "diff", "--name-only", ref, "--", "*.py"],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    if diff_result.returncode != 0:
+        raise click.UsageError(
+            f"--changed-only: invalid git ref {ref!r}: {diff_result.stderr.strip()}"
+        )
+
+    changed: set[Path] = set()
+    for line in diff_result.stdout.splitlines():
+        stripped = line.strip()
+        if stripped:
+            changed.add((git_root / stripped).resolve())
+    return changed
 
 
 def _collect_py_files(paths: tuple[str, ...], config: Config) -> list[Path]:
@@ -194,6 +228,13 @@ def main() -> None:
     metavar="TEXT",
     help="Reason text appended to generated suppression comments.",
 )
+@click.option(
+    "--changed-only",
+    "changed_only",
+    metavar="REF",
+    default=None,
+    help="Restrict checks to .py files changed relative to REF (e.g. main, HEAD~1).",
+)
 def check(  # nodo: DOC012 -- click params; Args section would duplicate --help text
     paths: tuple[str, ...],
     do_fix: bool,
@@ -205,6 +246,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     cli_ignore: tuple[str, ...],
     add_suppression: bool,
     suppression_reason: str,
+    changed_only: str | None,
 ) -> None:
     """Check docstrings against the configured schema."""
     if unsafe_fixes and not do_fix:
@@ -240,6 +282,9 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         )
 
     py_files = _collect_py_files(paths, config)
+    if changed_only is not None:
+        changed_set = _get_changed_py_files(changed_only, Path.cwd())
+        py_files = [f for f in py_files if f.resolve() in changed_set]
     results, suppressions = _run_checks(py_files, config)
 
     apply_unsafe = unsafe_fixes and do_fix
