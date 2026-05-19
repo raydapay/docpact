@@ -85,7 +85,7 @@ repos:
 | DOC013 | Empty section not in canonical form | WARNING |
 | DOC014 | Suspicious parameter name (likely copy-paste) | WARNING |
 | DOC050 | Pydantic model field missing `Field(description=...)` | WARNING |
-| DOC051 | Constraints section duplicates Annotated metadata | ERROR |
+| DOC051 | Constraints section duplicates Annotated metadata | ERROR (deferred — not yet active) |
 | DOC099 | `[FILL]` stub marker not replaced | ERROR |
 | MCP001 | Decorator `description=` and docstring `MCP:` section both present | ERROR |
 | FIX001 | Bare `# nodo` without codes or reason | WARNING |
@@ -115,7 +115,7 @@ sections are required. Assignment is automatic and deterministic:
 Tier 4 allows opt-in to Tier 3 strictness without MCP decorators:
 
 ```toml
-[tool.docpact.tiers]
+[tool.docpact.per-file-tier]
 "src/api/handlers.py" = 3
 ```
 
@@ -130,6 +130,8 @@ Tier 4 allows opt-in to Tier 3 strictness without MCP decorators:
 # Generated protobuf stubs — no point documenting these.
 "src/proto/**/*.py" = ["DOC001", "DOC002"]
 ```
+
+Patterns are anchored to the directory containing `pyproject.toml`. Write them as paths relative to the project root — they match correctly regardless of where `docpact check` is invoked from.
 
 Note: `__init__.py` files are already excluded by DOC002's default behaviour.
 Additional exclusions (generated code, stubs, migration scripts) use

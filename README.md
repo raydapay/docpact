@@ -43,6 +43,7 @@ docpact check src/ --diff             # preview fixes as a unified diff
 docpact check src/ --format sarif     # SARIF 2.1.0 for GitHub Code Scanning
 docpact check src/ --format json      # machine-readable JSON
 docpact check src/ --add-suppression  # baseline: add # nodo: comments for all current violations
+docpact check src/ --config /path/to/pyproject.toml  # explicit config path (bypasses CWD discovery)
 docpact generate src/                 # insert stub docstrings for undocumented functions
 docpact list-rules                    # list all rules with severity and fixability
 ```
@@ -78,6 +79,8 @@ Most projects need no tier config. When automatic assignment doesn't fit — for
 "src/domain/mcp/tools/*.py" = 3
 "src/routes/*.py" = 4
 ```
+
+Patterns are anchored to the directory containing `pyproject.toml`. `src/domain/mcp/tools/*.py` matches files relative to the project root, so it works regardless of where `docpact check` is invoked from.
 
 ## Adopting in an existing codebase
 
@@ -154,7 +157,7 @@ It does not replace ruff or ty. It does not import the code it analyzes. It does
 
 ## Status
 
-Self-hosting: docpact validates its own source on every commit. 575 tests, 96% coverage.
+Self-hosting: docpact validates its own source on every commit. 751 tests, 96% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099, MCP001, FIX001–FIX002, TY001–TY002.
 

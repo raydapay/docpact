@@ -36,10 +36,15 @@ Key facts a fresh session needs:
 - docpact's own config uses `select = ["DOC", "MCP", "FIX"]` — FIX namespace opted in.
 - `[tool.docpact.per-file-tier]` overrides tier per glob pattern (e.g. `"src/mcp/*.py" = 3`).
   Old key `[tool.docpact.tiers]` still works with a deprecation warning.
+  Patterns are anchored to the project root (directory containing `pyproject.toml`). `load_config`
+  returns `ConfigResult(config, root)`; matching functions receive `root` and relativize paths
+  before fnmatch. `assign_tier` accepts an optional `root` kwarg for the same purpose.
 - `--add-suppression` adds `# nodo: CODE -- baseline` to every currently-failing line.
   `--add-suppression --diff` previews without writing. `--suppression-reason TEXT` customises the reason.
 - `--changed-only <ref>` restricts checks to `.py` files changed relative to a git ref.
   Exits with a clear error if not in a git repo or ref is invalid.
+- `--config PATH` loads configuration from an explicit `pyproject.toml` or `docpact.toml`,
+  bypassing the CWD upward discovery walk. Root = `PATH.parent`.
 - When a module defines `__all__` as a literal, tier assignment uses it as the
   definitive visibility contract: listed → Tier 2 floor; absent → Tier 1 ceiling.
 - `allow_pragma = true` in `[tool.docpact]` enables `# docpact: tier=N` inline on
