@@ -9,10 +9,64 @@ ships; do not put status in CLAUDE.md.
 
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021, DOC050–DOC051,
-DOC099, MCP001, FIX001–FIX002, TY001–TY002. 664 tests, 96% coverage.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021, DOC050,
+DOC098–DOC099, MCP001, FIX001–FIX002, TY001–TY002. 670 tests, 94% coverage.
+DOC051 deferred (see "Deferred with reasoning" below).
 
-No active milestone. See "v0.3 scope" below for what shipped.
+No active milestone.
+
+---
+
+## Recent changes (post-v0.3)
+
+### CLI ergonomics + rule maintenance — 2026-05-19
+
+**CLI quick-wins** (ruff/ty/uv-inspired):
+
+- **`--extend-select` / `--extend-ignore`** — additive rule selection/ignore on top
+  of config, without replacing it. Useful for one-off CI overrides.
+- **`--no-config`** — skip `pyproject.toml`/`docpact.toml`; use defaults. Also
+  added to the `generate` command.
+- **`-q / --quiet`** — suppress all output except the exit code.
+- **`--statistics`** — print a per-rule violation count table after the main output
+  (sorted by count desc). Sourced from `format_statistics()` in `output/__init__.py`.
+- **`--color auto|always|never`** — ANSI color via rich. `auto` (default) enables
+  when stdout is a TTY and no `--output-file` is set. Error codes bold red, warning
+  bold yellow, fix markers bold cyan, help lines dim.
+- **`--output-file PATH`** — write output to a file instead of stdout. Color is
+  automatically disabled when writing to a file.
+- **`--no-respect-gitignore`** — opt out of `.gitignore` filtering. The config key
+  `respect_gitignore = true` (default) is the new persistent setting.
+- **`.gitignore` respect** — `_filter_gitignored()` calls `git check-ignore --stdin`;
+  no-ops gracefully outside a git repo.
+- **Exit code 2** on config parse errors (previously crashed); wraps `ConfigError`
+  as `click.UsageError`.
+
+**Output formats:**
+
+- **`--format github`** — emits `::error`/`::warning` GitHub Actions workflow
+  annotations. `::` in messages percent-encoded; columns 1-based.
+
+**DOC013 safe fix:**
+
+- Replaces non-canonical empty bodies (`N/A`, `NA`, `None`, whitespace-only) with
+  `"None."` in-place. Blank/None bodies get a diagnostic but no fix (no text to
+  locate). Byte offset computed from `func.docstring_start_offset + 3 + UTF-8
+  prefix length`.
+
+**MCP001 — three-state logic documented, severity lowered:**
+
+- Module docstring now explains the three states: neither → DOC012; one → OK;
+  both → MCP001 WARNING. Default severity changed from ERROR to WARNING (conflict
+  is a maintenance concern, not a structural error). Automated fix removed from
+  design — resolving two descriptions requires human judgment.
+
+**DOC051 — deferred to backlog:**
+
+- Removed from active registry. Concept is sound (type-expressible constraints
+  belong in `Annotated`, not prose), but the numeric-substring heuristic produces
+  false positives on legitimate docstrings. Code reserved. Full rationale in
+  "Deferred with reasoning" below.
 
 ---
 
