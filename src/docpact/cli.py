@@ -285,6 +285,13 @@ def main() -> None:
     help="Control ANSI color in text output.",
 )
 @click.option(
+    "--output-file",
+    "output_file",
+    default=None,
+    metavar="PATH",
+    help="Write output to PATH instead of stdout. Disables color.",
+)
+@click.option(
     "--no-respect-gitignore",
     "no_respect_gitignore",
     is_flag=True,
@@ -326,6 +333,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     quiet: bool,
     statistics: bool,
     color_mode: str,
+    output_file: str | None,
     no_respect_gitignore: bool,
     add_suppression: bool,
     suppression_reason: str,
@@ -396,27 +404,36 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         sys.exit(0)
 
     cwd = Path.cwd()
-    use_color = color_mode == "always" or (color_mode == "auto" and sys.stdout.isatty())
+    # Color is disabled when writing to a file (ANSI codes are useless in files).
+    use_color = output_file is None and (
+        color_mode == "always" or (color_mode == "auto" and sys.stdout.isatty())
+    )
+
     if output_format == "text":
+        parts: list[str] = []
         text = format_text(visible, cwd=cwd, color=use_color)
         if text:
-            click.echo(text)
+            parts.append(text)
         if statistics:
             stats = format_statistics(visible)
             if stats:
-                click.echo(stats)
+                parts.append(stats)
         if not quiet:
             summary = format_summary(visible)
             if summary:
-                click.echo(summary)
+                parts.append(summary)
+        output_str = "\n".join(parts)
     elif output_format == "json":
-        click.echo(format_json(visible, cwd=cwd))
+        output_str = format_json(visible, cwd=cwd)
     elif output_format == "sarif":
-        click.echo(format_sarif(visible, cwd=cwd))
-    elif output_format == "github":
-        output = format_github(visible, cwd=cwd)
-        if output:
-            click.echo(output)
+        output_str = format_sarif(visible, cwd=cwd)
+    else:  # github
+        output_str = format_github(visible, cwd=cwd)
+
+    if output_file:
+        Path(output_file).write_text(output_str + "\n" if output_str else "")
+    elif output_str:
+        click.echo(output_str)
 
     has_errors = any(r.severity == Severity.ERROR for r in visible)
     if has_errors and not exit_zero:
