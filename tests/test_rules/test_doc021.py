@@ -290,3 +290,49 @@ def test_multi_arg_call_not_extracted(tmp_path: Path) -> None:
     func = _func(tmp_path / "t.py", params=(_param("flag", 'Query(False, description="x")'),))
     doc = _doc({"flag": "Flag. Defaults to true."})
     assert check(func, doc, _cfg()) == []
+
+
+# ---------------------------------------------------------------------------
+# Bool / None capitalisation (Python canonical vs. prose convention)
+# ---------------------------------------------------------------------------
+
+
+def test_false_lowercase_prose_matches_query_false(tmp_path: Path) -> None:
+    # Query(False) → False; prose "false" → normalised to "false". Should match.
+    func = _func(tmp_path / "t.py", params=(_param("verbose", "Query(False)"),))
+    doc = _doc({"verbose": "Include details. Defaults to false."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_true_lowercase_prose_no_error(tmp_path: Path) -> None:
+    func = _func(tmp_path / "t.py", params=(_param("flag", "True"),))
+    doc = _doc({"flag": "Enable feature. Defaults to true."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_false_lowercase_prose_no_error(tmp_path: Path) -> None:
+    func = _func(tmp_path / "t.py", params=(_param("flag", "False"),))
+    doc = _doc({"flag": "Disable by default. Defaults to false."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_none_lowercase_prose_no_error(tmp_path: Path) -> None:
+    func = _func(tmp_path / "t.py", params=(_param("x", "None"),))
+    doc = _doc({"x": "Optional value. Defaults to none."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_rst_backtick_false_lowercase_prose_no_error(tmp_path: Path) -> None:
+    # ``false`` → false (after backtick strip); False → false (after normalise). Match.
+    func = _func(tmp_path / "t.py", params=(_param("flag", "False"),))
+    doc = _doc({"flag": "Off by default. Defaults to ``false``."})
+    assert check(func, doc, _cfg()) == []
+
+
+def test_bool_drift_still_fires_with_wrong_value(tmp_path: Path) -> None:
+    # Defaults to false but signature is True — still fires.
+    func = _func(tmp_path / "t.py", params=(_param("flag", "True"),))
+    doc = _doc({"flag": "Enable feature. Defaults to false."})
+    results = check(func, doc, _cfg())
+    assert len(results) == 1
+    assert results[0].code == "DOC021"

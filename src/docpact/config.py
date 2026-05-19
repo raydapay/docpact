@@ -322,6 +322,23 @@ def rule_is_file_ignored(code: str, namespace: str, ignores: frozenset[str]) -> 
     return any(code == p or namespace == p or code.startswith(p) for p in ignores)
 
 
+def file_tier_override_for(file_path: Path, tier_overrides: dict[str, int]) -> int | None:
+    """Return the tier override for a file, or None if no pattern matches.
+
+    Args:
+        file_path: Absolute or relative path to check.
+        tier_overrides: Mapping of fnmatch patterns to tier numbers.
+
+    Returns:
+        The tier number of the first matching pattern, or None.
+    """
+    path_str = str(file_path)
+    for pattern, tier in tier_overrides.items():
+        if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(path_str, f"*/{pattern}"):
+            return tier
+    return None
+
+
 def file_is_excluded(file_path: Path, exclude: tuple[str, ...]) -> bool:
     """Return True if a file matches any exclude pattern.
 

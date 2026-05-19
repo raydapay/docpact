@@ -638,3 +638,82 @@ def test_format_github_clean_file_no_output(tmp_path: Path) -> None:
     src.write_text('"""Module."""\ndef foo() -> None:\n    """Do foo."""\n')
     result = _run("check", "--format", "github", str(src))
     assert result.output.strip() == ""  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# --select / --ignore comma-separated codes
+# ---------------------------------------------------------------------------
+
+
+def test_select_comma_separated_runs_both_codes(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x):\n    pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        result = runner.invoke(
+            main,
+            ["check", "--select", "DOC001,DOC007", str(src)],
+            catch_exceptions=False,
+        )
+    assert result.exit_code == 1  # type: ignore[union-attr]
+    assert "DOC001" in result.output  # type: ignore[union-attr]
+
+
+def test_select_comma_separated_same_as_repeated_flag(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x):\n    pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        r1 = runner.invoke(
+            main, ["check", "--select", "DOC001,DOC007", str(src)], catch_exceptions=False
+        )
+        r2 = runner.invoke(
+            main,
+            ["check", "--select", "DOC001", "--select", "DOC007", str(src)],
+            catch_exceptions=False,
+        )
+    assert r1.exit_code == r2.exit_code  # type: ignore[union-attr]
+    assert r1.output == r2.output  # type: ignore[union-attr]
+
+
+def test_extend_select_comma_separated(tmp_path: Path) -> None:
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x):\n    pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        result = runner.invoke(
+            main,
+            ["check", "--extend-select", "DOC001,DOC007", str(src)],
+            catch_exceptions=False,
+        )
+    assert result.exit_code == 1  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# DOC003 respects per-file-tier = 1
+# ---------------------------------------------------------------------------
+
+
+def test_doc003_silent_when_per_file_tier_1() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        td_path = Path(td)
+        (td_path / "router.py").write_text("class Context:\n    pass\n")
+        (td_path / "pyproject.toml").write_text(
+            '[tool.docpact]\nselect = ["DOC003"]\n\n[tool.docpact.per-file-tier]\n"router.py" = 1\n'
+        )
+        result = runner.invoke(main, ["check", "router.py"], catch_exceptions=False)
+    assert "DOC003" not in result.output  # type: ignore[union-attr]
+
+
+def test_doc003_fires_when_no_tier_override() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        td_path = Path(td)
+        (td_path / "router.py").write_text("class Context:\n    pass\n")
+        (td_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC003"]\n')
+        result = runner.invoke(main, ["check", "router.py"], catch_exceptions=False)
+    assert "DOC003" in result.output  # type: ignore[union-attr]

@@ -27,6 +27,7 @@ from docpact.config import (
     ConfigError,
     file_ignores_for,
     file_is_excluded,
+    file_tier_override_for,
     load_config,
     rule_is_enabled,
     rule_is_file_ignored,
@@ -129,6 +130,15 @@ def _filter_gitignored(files: list[Path], cwd: Path) -> list[Path]:
         return files
 
 
+def _expand_codes(codes: tuple[str, ...]) -> tuple[str, ...]:
+    """Split comma-separated code tokens and flatten into a single tuple.
+
+    Allows ``--select DOC021,DOC003`` as shorthand for
+    ``--select DOC021 --select DOC003``, matching ruff/ty behaviour.
+    """
+    return tuple(c.strip() for raw in codes for c in raw.split(",") if c.strip())
+
+
 _FILE_LEVEL_CODES: frozenset[str] = frozenset(
     {"FIX001", "FIX002", "FIX003", "DOC002", "DOC003", "DOC050"}
 )
@@ -192,7 +202,10 @@ def _run_checks(
                 case "DOC002":
                     file_results.extend(check_module_docstring(source_text, file_path, cfg))
                 case "DOC003":
-                    file_results.extend(check_class_docstrings(source_text, file_path, cfg))
+                    # per-file-tier = 1 silences DOC003 for classes in that file,
+                    # consistent with how tier 1 silences function-level rules.
+                    if file_tier_override_for(file_path, config.tier_overrides) != 1:
+                        file_results.extend(check_class_docstrings(source_text, file_path, cfg))
                 case "DOC050":
                     file_results.extend(check_pydantic_fields(source_text, file_path, cfg))
 
@@ -376,6 +389,11 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         config = Config() if no_config else load_config(Path.cwd())
     except ConfigError as exc:
         raise click.UsageError(str(exc)) from exc
+
+    cli_select = _expand_codes(cli_select)
+    cli_ignore = _expand_codes(cli_ignore)
+    cli_extend_select = _expand_codes(cli_extend_select)
+    cli_extend_ignore = _expand_codes(cli_extend_ignore)
 
     if cli_select:
         config = dataclasses.replace(config, select=cli_select)

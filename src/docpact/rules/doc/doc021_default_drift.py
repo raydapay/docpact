@@ -77,13 +77,20 @@ _DEFAULTS_TO_RE: re.Pattern[str] = re.compile(
 
 
 def _normalize(s: str) -> str:
-    """Strip whitespace, rST backtick pairs, and one layer of matching quotes."""
+    """Strip whitespace, rST backtick pairs, and one layer of matching quotes.
+
+    Bool and None values are lowercased: Python writes ``True``/``False``/``None``
+    but documentation convention across languages uses lowercase. Both sides of
+    the comparison pass through here, so the case difference never fires.
+    """
     s = s.strip()
     # Strip rST double-backtick markup: ``value`` → value
     if s.startswith("``") and s.endswith("``") and len(s) > 4:
         s = s[2:-2]
     if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
-        return s[1:-1]
+        s = s[1:-1]
+    if s in ("True", "False", "None"):
+        return s.lower()
     return s
 
 

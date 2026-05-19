@@ -12,6 +12,7 @@ from docpact.config import (
     ConfigError,
     file_ignores_for,
     file_is_excluded,
+    file_tier_override_for,
     load_config,
     rule_is_enabled,
 )
@@ -308,3 +309,44 @@ def test_allow_pragma_non_bool_raises(tmp_path: Path) -> None:
     (tmp_path / "docpact.toml").write_text('allow_pragma = "yes"\n')
     with pytest.raises(ConfigError):
         load_config(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# file_tier_override_for
+# ---------------------------------------------------------------------------
+
+
+def test_file_tier_override_for_matches(tmp_path: Path) -> None:
+    f = tmp_path / "src" / "router.py"
+    result = file_tier_override_for(f, {"src/router.py": 1})
+    assert result == 1
+
+
+def test_file_tier_override_for_no_match(tmp_path: Path) -> None:
+    f = tmp_path / "src" / "router.py"
+    result = file_tier_override_for(f, {"src/other.py": 1})
+    assert result is None
+
+
+def test_file_tier_override_for_relative_pattern() -> None:
+    f = Path("/project/src/mcp_tools.py")
+    result = file_tier_override_for(f, {"src/mcp_tools.py": 3})
+    assert result == 3
+
+
+def test_file_tier_override_for_wildcard_pattern() -> None:
+    f = Path("/project/src/domain/search/mcp_tools.py")
+    result = file_tier_override_for(f, {"*/mcp_tools.py": 3})
+    assert result == 3
+
+
+def test_file_tier_override_for_empty_overrides() -> None:
+    f = Path("/project/src/router.py")
+    assert file_tier_override_for(f, {}) is None
+
+
+def test_file_tier_override_for_first_match_wins() -> None:
+    f = Path("/project/src/router.py")
+    overrides = {"src/router.py": 1, "src/*.py": 2}
+    result = file_tier_override_for(f, overrides)
+    assert result == 1
