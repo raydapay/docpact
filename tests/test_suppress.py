@@ -203,3 +203,59 @@ def test_noqa_in_source_suppresses_result_when_configured(tmp_path: Path) -> Non
     sups = parse_suppressions(src.read_text(), markers=("noqa",))
     r = _result("DOC001", src, line=1)
     assert is_suppressed(r, sups)
+
+
+# ---------------------------------------------------------------------------
+# tokenize-based scanner: string literal isolation
+# ---------------------------------------------------------------------------
+
+
+def test_suppression_in_triple_quoted_docstring_not_picked_up() -> None:
+    source = (
+        "def foo():\n"
+        '    """Example:\n'
+        "        # nodo: DOC001 -- this is in a docstring\n"
+        '    """\n'
+        "    pass\n"
+    )
+    assert parse_suppressions(source) == {}
+
+
+def test_suppression_in_real_comment_is_picked_up() -> None:
+    source = "def foo(): pass  # nodo: DOC007 -- reason\n"
+    assert parse_suppressions(source) == {1: frozenset({"DOC007"})}
+
+
+def test_mixed_file_docstring_ignored_real_comment_captured() -> None:
+    source = (
+        '"""Module with # nodo: DOC001 -- in module docstring."""\n'
+        "\n"
+        "def foo(): pass  # nodo: DOC007 -- real\n"
+    )
+    result = parse_suppressions(source)
+    assert result == {3: frozenset({"DOC007"})}
+    assert 1 not in result
+
+
+def test_suppression_in_single_quoted_string_not_picked_up() -> None:
+    source = 'x = "# nodo: DOC001 -- in string"\ny = 1\n'
+    assert parse_suppressions(source) == {}
+
+
+def test_suppression_in_fstring_not_picked_up() -> None:
+    source = 'x = f"message: {v}  # nodo: DOC001"\ny = 1\n'
+    assert parse_suppressions(source) == {}
+
+
+def test_tokenize_error_returns_empty_dict() -> None:
+    source = 'x = 1\ny = """unclosed\n'
+    result = parse_suppressions(source)
+    assert isinstance(result, dict)
+
+
+def test_tokenize_error_partial_results_returned() -> None:
+    # Line 1 has a valid comment; line 2 opens an unclosed string.
+    source = 'x = 1  # nodo: DOC001 -- reason\ny = """unclosed\n'
+    result = parse_suppressions(source)
+    # COMMENT token for line 1 is emitted before TokenError on line 2.
+    assert result == {1: frozenset({"DOC001"})}

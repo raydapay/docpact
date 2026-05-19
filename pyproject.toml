@@ -134,14 +134,3 @@ exclude = ["tests/", "scripts/"]
 # boilerplate across every rule with zero signal. The module docstring of each rule file
 # is where the substantive documentation lives; the check() summary line is sufficient.
 "src/docpact/rules/*/*.py" = ["DOC012"]
-# These files contain inline examples of suppression syntax (e.g. "# nodo: CODE -- reason")
-# in their module docstrings. The text-based suppression scanner picks them up as real
-# suppression records; FIX003 then fires because there is no violation on those lines.
-# This is a known scanner limitation (it does not skip string literals). Tracked separately.
-"src/docpact/suppress.py" = ["FIX003"]
-"src/docpact/baseline.py" = ["FIX003"]
-"src/docpact/rules/fix/fix001_bare_noqa.py" = ["FIX003"]
-"src/docpact/rules/fix/fix002_no_reason.py" = ["FIX003"]
-"src/docpact/rules/fix/fix003_stale_suppression.py" = ["FIX003"]
-"src/docpact/rules/doc/doc022_type_prose_mismatch.py" = ["FIX003"]
-"src/docpact/rules/doc/doc003_class_docstring.py" = ["FIX003"]

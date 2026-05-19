@@ -14,6 +14,13 @@ Syntax (default marker ``nodo``):
 Bare marker (without codes) suppresses all diagnostics on that line and
 is itself a violation of FIX001.
 
+Scanner implementation:
+    ``parse_suppressions`` uses ``tokenize.generate_tokens`` to walk the
+    token stream rather than a raw line scan. This guarantees that suppression
+    patterns inside string literals (module docstrings, inline strings) are
+    never treated as real suppressions — ``tokenize`` only emits ``COMMENT``
+    tokens for actual Python comments, never for text inside strings.
+
 Why the regex is built per call rather than as a module-level constant:
     ``suppress_comment`` is a per-project config value, not a global. A
     module-level regex would bake in ``nodo`` at import time and break any
@@ -24,7 +31,9 @@ Why the regex is built per call rather than as a module-level constant:
 
 from __future__ import annotations
 
+import io
 import re
+import tokenize
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -64,15 +73,24 @@ def parse_suppressions(
     """
     pattern = _build_re(markers)
     result: dict[int, frozenset[str]] = {}
-    for lineno, line in enumerate(source.splitlines(), start=1):
-        m = pattern.search(line)
-        if m is None:
-            continue
-        codes_str = m.group(1)
-        if codes_str is None:
-            result[lineno] = frozenset()  # bare suppression
-        else:
-            result[lineno] = frozenset(c.strip() for c in codes_str.split(","))
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+        for tok in tokens:
+            if tok.type != tokenize.COMMENT:
+                continue
+            m = pattern.search(tok.string)
+            if m is None:
+                continue
+            lineno = tok.start[0]  # 1-based, matches existing convention
+            codes_str = m.group(1)
+            if codes_str is None:
+                result[lineno] = frozenset()  # bare suppression
+            else:
+                result[lineno] = frozenset(c.strip() for c in codes_str.split(","))
+    except tokenize.TokenError:
+        # Unclosed string or other tokenize-level error (broken source).
+        # Return partial results — caller handles parse failures separately.
+        pass
     return result
 
 
