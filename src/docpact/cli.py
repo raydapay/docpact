@@ -296,7 +296,7 @@ def main() -> None:
     "cli_ignore",
     multiple=True,
     metavar="CODE",
-    help="Rule codes or prefixes to disable (replaces config ignore).",
+    help="Rule codes or prefixes to disable (extends config ignore).",
 )
 @click.option(
     "--extend-select",
