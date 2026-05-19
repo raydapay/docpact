@@ -1,8 +1,8 @@
 # docpact — Specification
 
-**Version:** 0.3.2  
-**Status:** Active — v0.1 complete, v0.2 in progress  
-**Last revised:** 2026-05-18
+**Version:** 0.3.3  
+**Status:** Active — v0.1 complete, v0.2 complete, v0.3 complete  
+**Last revised:** 2026-05-19
 
 ---
 
@@ -157,7 +157,7 @@ This specification describes the complete system. Not all of it ships in v0.1. T
 - Structural mode (deterministic checks only)
 - Google and NumPy docstring parsers (`format = "google"` or `"numpy"`)
 - Tiers 1, 2, 3 (Tier 4 partial: explicit configuration only, no detection)
-- Rule namespaces with rules: `DOC`, `MCP`, `FIX`, `TY`
+- Rule namespaces with rules: `DOC`, `MCP`, `FIX`, `TY`, `PARSE`
 - Rule namespace allocated, no rules yet: `HEUR`
 - Commands: `check`, `check --fix`, `check --unsafe-fixes`, `generate`, `show-schema`, `list-rules`
 - Configuration via `pyproject.toml` and `docpact.toml`
@@ -917,8 +917,11 @@ Bare suppression without codes emits `FIX001`. Suppression with codes but withou
 | `MCP` | MCP-specific rules (decorator conflicts, schema metadata) | v0.1 |
 | `FIX` | Fix-mode diagnostics | v0.1 |
 | `TY` | Annotation/docstring contradiction rules | v0.1 |
+| `PARSE` | Parse-time error rules (file cannot be parsed at all) | post-v0.3 |
 | `HEUR` | Heuristic rules | v0.2 (namespace allocated v0.1; no rules yet) |
 | `SEM` | Semantic mode findings | Deferred (experimental) |
+
+`PARSE` rules fire before any structural or function-level checks. If a `PARSE` rule fires for a file, all other checks for that file are skipped — structural analysis requires a valid AST. By default the `PARSE` namespace is selected (same as `DOC`, `MCP`); add `PARSE001` to `[tool.docpact.per-file-ignores]` to silence it for generated or vendored files.
 
 Error codes with `[*]` suffix indicate a fix is available.
 

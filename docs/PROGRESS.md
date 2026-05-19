@@ -10,7 +10,7 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050,
-DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002. 743 tests, 94% coverage.
+DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001. 767 tests, 94% coverage.
 DOC051 deferred (see "Deferred with reasoning" below).
 
 No active milestone.
@@ -18,6 +18,28 @@ No active milestone.
 ---
 
 ## Recent changes (post-v0.3)
+
+### PARSE001 — Python syntax error rule — 2026-05-19
+
+Replaces the unhandled `SyntaxError` traceback from `extract_functions` with
+a structured diagnostic.
+
+- New `PARSE` namespace: `src/docpact/rules/parse/`. `PARSE001` fires at
+  ERROR severity when a file cannot be parsed; all other checks for that file
+  are skipped — structural analysis requires a valid AST.
+- `_run_checks` wraps `extract_functions` in try/except; on SyntaxError emits
+  PARSE001, adds results to the accumulator, and `continue`s to the next file,
+  skipping the function-level loop and FIX003 post-pass.
+- Position extracted from `SyntaxError.lineno` / `offset` (1-based offset
+  converted to 0-based column; None guards in place).
+- `PARSE` added to default `select` in `config.py` and to docpact's own
+  `pyproject.toml` self-check.
+- Flows through all output formatters (text, JSON, SARIF, GitHub).
+  Inline `# nodo: PARSE001` suppression works via the existing text-based
+  `parse_suppressions` (handles invalid Python fine).
+- 16 tests: unit (position extraction, None guards, severity override, stub
+  returns `[]`) + CLI (text/JSON/SARIF, `--select PARSE`, `severity=off`,
+  inline suppression).
 
 ### recon-app dry-run response — 2026-05-19
 

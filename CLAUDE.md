@@ -12,8 +12,8 @@ Copy this file to those names if needed; treat them as equivalent.
 
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021, DOC050,
-DOC098–DOC099, MCP001, FIX001–FIX002, TY001–TY002.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050,
+DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001.
 DOC051 (Annotated constraint duplication) is deferred — conceptually sound,
 heuristic too coarse. See PROGRESS.md "Deferred with reasoning".
 

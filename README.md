@@ -56,6 +56,7 @@ docpact list-rules                    # list all rules with severity and fixabil
 | `TY` | TY001–TY002 | Type/docstring coherence: `-> None` with substantive Returns prose; non-None return with empty Returns |
 | `MCP` | MCP001 | MCP-specific conflicts: decorator `description=` duplicates docstring `MCP:` section |
 | `FIX` | FIX001–FIX003 | Suppression hygiene: bare suppression comments, missing `-- reason`, stale suppressions |
+| `PARSE` | PARSE001 | Parse-time errors: file contains a Python syntax error and cannot be checked; fires before all other rules |
 
 Full rule documentation: [`docs/rules/`](docs/rules/).
 
@@ -157,9 +158,9 @@ It does not replace ruff or ty. It does not import the code it analyzes. It does
 
 ## Status
 
-Self-hosting: docpact validates its own source on every commit. 751 tests, 94% coverage.
+Self-hosting: docpact validates its own source on every commit. 767 tests, 94% coverage.
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001.
 
 ## Documentation
 
