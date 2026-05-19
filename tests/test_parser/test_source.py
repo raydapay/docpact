@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from docpact.parser.source import extract_functions
+from docpact.parser.source import extract_functions, parse_all_names
 
 if TYPE_CHECKING:
     from docpact.model.function_info import FunctionInfo
@@ -450,3 +450,48 @@ def test_nested_fixture_inner_method_has_class() -> None:
     fns = extract_functions(_FIXTURES / "edge_cases" / "nested_functions.py")
     m = _fn(fns, "inner_method")
     assert m.containing_class == "Inner"
+
+
+# ---------------------------------------------------------------------------
+# parse_all_names
+# ---------------------------------------------------------------------------
+
+
+def test_parse_all_names_absent_returns_none() -> None:
+    assert parse_all_names("def foo(): pass\n") is None
+
+
+def test_parse_all_names_list_literal() -> None:
+    src = '__all__ = ["foo", "bar"]\n'
+    assert parse_all_names(src) == frozenset({"foo", "bar"})
+
+
+def test_parse_all_names_tuple_literal() -> None:
+    src = '__all__ = ("foo", "bar")\n'
+    assert parse_all_names(src) == frozenset({"foo", "bar"})
+
+
+def test_parse_all_names_empty_list() -> None:
+    src = "__all__ = []\n"
+    assert parse_all_names(src) == frozenset()
+
+
+def test_parse_all_names_non_string_element_returns_none() -> None:
+    # Cannot safely evaluate non-literal elements.
+    src = "__all__ = ['foo', some_var]\n"
+    assert parse_all_names(src) is None
+
+
+def test_parse_all_names_concatenation_returns_none() -> None:
+    src = '__all__ = ["foo"] + ["bar"]\n'
+    assert parse_all_names(src) is None
+
+
+def test_parse_all_names_inside_function_ignored() -> None:
+    # __all__ inside a function body has no effect on importers and is ignored.
+    src = 'def setup():\n    __all__ = ["foo"]\n'
+    assert parse_all_names(src) is None
+
+
+def test_parse_all_names_syntax_error_returns_none() -> None:
+    assert parse_all_names("def (broken:") is None

@@ -260,6 +260,67 @@ def test_tier_overrides_empty_dict_is_ignored() -> None:
 
 
 def test_private_function_in_private_class_is_tier1() -> None:
-    # Both rule 3 and rule 4 would fire; rule 3 wins (evaluated first).
+    # Both rule 4 and rule 5 would fire; rule 4 wins (evaluated first).
     fn = _fn("_helper", containing_class="_Internal")
     assert assign_tier(fn) == 1
+
+
+# ---------------------------------------------------------------------------
+# Rule 3 — __all__ as the definitive visibility contract
+# ---------------------------------------------------------------------------
+
+
+_ALL_NAMES = frozenset({"public_fn", "_reexported"})
+
+
+def test_all_names_none_has_no_effect() -> None:
+    # Without __all__, name-based rules still apply.
+    fn = _fn("public_fn")
+    assert assign_tier(fn, all_names=None) == 2
+
+
+def test_function_in_all_is_tier2() -> None:
+    fn = _fn("public_fn")
+    assert assign_tier(fn, all_names=_ALL_NAMES) == 2
+
+
+def test_underscore_function_in_all_is_tier2() -> None:
+    # _reexported would normally be Tier 1 via rule 5, but __all__ overrides.
+    fn = _fn("_reexported")
+    assert assign_tier(fn, all_names=_ALL_NAMES) == 2
+
+
+def test_public_function_absent_from_all_is_tier1() -> None:
+    # Public name, but not listed in __all__ → definitively private.
+    fn = _fn("internal_helper")
+    assert assign_tier(fn, all_names=_ALL_NAMES) == 1
+
+
+def test_all_names_does_not_affect_methods() -> None:
+    # Methods are accessed through their class; __all__ is irrelevant.
+    fn = _fn("internal_helper", containing_class="Service")
+    assert assign_tier(fn, all_names=_ALL_NAMES) == 2
+
+
+def test_all_names_private_class_method_still_tier1() -> None:
+    # Methods on private classes are caught by rule 4 regardless of __all__.
+    fn = _fn("method", containing_class="_Internal")
+    assert assign_tier(fn, all_names=_ALL_NAMES) == 1
+
+
+def test_mcp_decorator_beats_all_names() -> None:
+    # Rule 1 fires before rule 3.
+    fn = _fn("_tool", decorators=(_dec("mcp.tool"),))
+    assert assign_tier(fn, all_names=frozenset()) == 3
+
+
+def test_tier_override_beats_all_names() -> None:
+    # Rule 2 fires before rule 3.
+    fn = _fn("internal_helper", file_path=Path("/project/src/routes.py"))
+    assert assign_tier(fn, tier_overrides={"src/routes.py": 4}, all_names=_ALL_NAMES) == 4
+
+
+def test_all_names_empty_set_makes_all_module_fns_tier1() -> None:
+    # Module defines __all__ = [] — everything is private.
+    fn = _fn("public_fn")
+    assert assign_tier(fn, all_names=frozenset()) == 1

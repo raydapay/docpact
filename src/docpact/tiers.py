@@ -38,7 +38,12 @@ def _class_is_private(class_name: str) -> bool:
     return class_name.startswith("_")
 
 
-def assign_tier(func: FunctionInfo, tier_overrides: dict[str, int] | None = None) -> int:
+def assign_tier(
+    func: FunctionInfo,
+    tier_overrides: dict[str, int] | None = None,
+    *,
+    all_names: frozenset[str] | None = None,
+) -> int:
     """Determine the tier of a function.
 
     Rules are evaluated in order; the first match wins (spec §10.1).
@@ -48,6 +53,10 @@ def assign_tier(func: FunctionInfo, tier_overrides: dict[str, int] | None = None
         tier_overrides: Optional per-file tier overrides from configuration.
             Keys are fnmatch glob patterns relative to the project root;
             values are tier numbers 1-4.
+        all_names: Names exported by __all__ in the function's module, or
+            None if the module does not define __all__. When provided, this
+            is the authoritative visibility contract for module-level functions
+            (not for methods, which are accessed through their class).
 
     Returns:
         Tier number, 1-4.
@@ -71,24 +80,29 @@ def assign_tier(func: FunctionInfo, tier_overrides: dict[str, int] | None = None
             if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(path_str, f"*/{pattern}"):
                 return tier_num
 
-    # Rule 3: Method on a class whose name begins with `_` → Tier 1.
+    # Rule 3: __all__ is the definitive public API contract for module-level
+    # functions. Methods are accessed through their class and are unaffected.
+    if all_names is not None and func.containing_class is None:
+        return 2 if func.name in all_names else 1
+
+    # Rule 4: Method on a class whose name begins with `_` → Tier 1.
     if func.containing_class is not None and _class_is_private(func.containing_class):
         return 1
 
-    # Rule 4: Name begins with `_` (other than dunder methods) → Tier 1.
+    # Rule 5: Name begins with `_` (other than dunder methods) → Tier 1.
     if func.name.startswith("_") and not _is_dunder(func.name):
         return 1
 
-    # Rule 5: Dunder methods inherit the tier of their containing class.
-    # Rule 3 already handles the private-class case, so here the class is
+    # Rule 6: Dunder methods inherit the tier of their containing class.
+    # Rule 4 already handles the private-class case, so here the class is
     # either public or absent (module-level dunder, unusual but possible).
     # Both cases yield Tier 2.
     if _is_dunder(func.name):
         return 2
 
-    # Rule 6: @property, @cached_property, @staticmethod, @classmethod inherit
-    # the tier of their containing class. Rules 3 and 7 already produce the
+    # Rule 7: @property, @cached_property, @staticmethod, @classmethod inherit
+    # the tier of their containing class. Rules 4 and 8 already produce the
     # correct result without a special case here.
 
-    # Rule 7: All other public functions and methods → Tier 2.
+    # Rule 8: All other public functions and methods → Tier 2.
     return 2

@@ -27,6 +27,61 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def parse_all_names(source: str) -> frozenset[str] | None:
+    """Return the names exported by __all__ if it is a simple string literal list or tuple.
+
+    Args:
+        source: Raw Python source text.
+
+    Returns:
+        Frozenset of names if __all__ is defined as a list or tuple of string
+        literals at module level. None if __all__ is absent, dynamically
+        constructed, or the source has a syntax error.
+
+    Constraints:
+        Only inspects module-level assignments. __all__ inside a function or
+        class body is ignored (it has no effect on importers either).
+        Conservative: any non-string element returns None so the caller can
+        fall back to name-based heuristics.
+
+    Stability: beta
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    return _extract_string_literals(node.value)
+    return None
+
+
+def _extract_string_literals(node: ast.expr) -> frozenset[str] | None:
+    """Extract string elements from a list or tuple literal node.
+
+    Args:
+        node: An AST expression node.
+
+    Returns:
+        Frozenset of string values if node is a list or tuple of string
+        constants. None if the node is anything else or contains non-string
+        elements.
+
+    Stability: internal
+    """
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return None
+    names: set[str] = set()
+    for elt in node.elts:
+        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+            names.add(elt.value)
+        else:
+            return None
+    return frozenset(names)
+
+
 def extract_functions(source_path: Path) -> list[FunctionInfo]:
     """Extract all function and method definitions from a source file.
 

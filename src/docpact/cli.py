@@ -33,7 +33,7 @@ from docpact.fix import apply_fixes, diff_fixes
 from docpact.model.diagnostic import Severity
 from docpact.output import format_json, format_sarif, format_summary, format_text
 from docpact.parser.docstring import GoogleParser, NumpyParser
-from docpact.parser.source import extract_functions
+from docpact.parser.source import extract_functions, parse_all_names
 from docpact.rules import load_builtin_rules
 from docpact.rules._registry import RuleConfig, all_rules
 from docpact.rules.doc.doc002_module_docstring import check_module_docstring
@@ -155,10 +155,11 @@ def _run_checks(
                 case "DOC050":
                     results.extend(check_pydantic_fields(source_text, file_path, cfg))
 
+        all_names = parse_all_names(source_text)
         functions = extract_functions(file_path)
         for func in functions:
             doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
-            tier = assign_tier(func, config.tier_overrides)
+            tier = assign_tier(func, config.tier_overrides, all_names=all_names)
             config_options: dict[str, object] = {"tier": tier}
             for meta, rule_fn in rules.values():
                 if meta.code in {"FIX001", "FIX002", "DOC002", "DOC003", "DOC050"}:
