@@ -17,6 +17,7 @@ class SectionEntry:
 
     key: str  # parameter name, exception type, etc.
     description: str
+    type_annotation: str | None = None  # inline type from x(int): form; None when absent
 
 
 @dataclass(frozen=True, slots=True)

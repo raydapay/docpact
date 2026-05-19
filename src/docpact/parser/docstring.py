@@ -131,7 +131,12 @@ def _sections_from_griffe(
 
         elif gs.kind == griffe.DocstringSectionKind.parameters:
             entries = tuple(
-                SectionEntry(key=p.name, description=p.description or "") for p in gs.value
+                SectionEntry(
+                    key=p.name,
+                    description=p.description or "",
+                    type_annotation=str(p.annotation) if p.annotation is not None else None,
+                )
+                for p in gs.value
             )
             sections["Args"] = Section(name="Args", entries=entries)
 
