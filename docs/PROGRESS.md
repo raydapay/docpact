@@ -10,7 +10,7 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021, DOC050,
-DOC098–DOC099, MCP001, FIX001–FIX002, TY001–TY002. 670 tests, 94% coverage.
+DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002. 703 tests, 94% coverage.
 DOC051 deferred (see "Deferred with reasoning" below).
 
 No active milestone.
@@ -18,6 +18,42 @@ No active milestone.
 ---
 
 ## Recent changes (post-v0.3)
+
+### recon-app dry-run response — 2026-05-19
+
+Addressed 5 of 7 findings from external dry-run on a real FastAPI codebase.
+
+**DOC021 — three fixes:**
+- rST backtick stripping: `_normalize` now strips ` ``...`` ` pairs before
+  quote-stripping. Fixes ` ``"human"`` ` matching `"human"`.
+- Wrapper default extraction: `Query(False)`, `Field("x")` — extracts inner
+  literal for comparison. Error messages still show the original expression.
+- Literals-only scope: DOC021 now skips parameters whose effective default
+  is not a Python constant. `SESSION_REGISTRY`, `DEFAULT_TIMEOUT`, etc. are
+  excluded. Known blind spot documented in rule module docstring: a constant
+  whose prose description disagrees with its actual value won't fire.
+
+**DOC003 — class tier logic:**
+- Leading underscore → silent (private by convention).
+- Module defines `__all__` → only listed top-level classes fire.
+- No `__all__`, no underscore → fires (assumed public).
+- `__all__` does not apply to nested classes.
+- Module docstring updated with migration guidance.
+
+**FIX003 — stale suppression detection (new rule):**
+- Fires when `# nodo: CODE` has no active violation for `CODE` on that line.
+- Complement to `--add-suppression` baselining — mechanically identifies
+  suppressions that can be safely deleted after docstrings are written.
+- Implemented as a file-level post-pass in `_run_checks`; needs the complete
+  violation set before suppression filtering.
+- Dogfood note: 12 FIX003 warnings on docpact's own source (examples in
+  module docstrings picked up by the line scanner). Pre-existing limitation
+  of `parse_suppressions` not skipping string literal content.
+
+**Deferred (inbox issues #2, #3):**
+- `--config` flag for explicit pyproject.toml path.
+- `per-file-tier` glob anchoring to project root.
+Both pair naturally; deferred to a UX pass.
 
 ### CLI ergonomics + rule maintenance — 2026-05-19
 
