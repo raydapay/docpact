@@ -42,6 +42,7 @@ class Config:
     rule_severities: dict[str, Severity] = field(default_factory=dict)
     suppress_comment: tuple[str, ...] = ("nodo",)
     allow_pragma: bool = False
+    respect_gitignore: bool = True
 
 
 _SEVERITY_MAP: dict[str, Severity] = {
@@ -156,6 +157,13 @@ def _parse_section(raw: dict[str, object]) -> Config:
             raise ConfigError("allow_pragma: expected a boolean")
         allow_pragma = v
 
+    respect_gitignore: bool = True
+    if "respect_gitignore" in raw:
+        v = raw["respect_gitignore"]
+        if not isinstance(v, bool):
+            raise ConfigError("respect_gitignore: expected a boolean")
+        respect_gitignore = v
+
     return Config(
         schema=schema,
         docstring_format=docstring_format,
@@ -168,6 +176,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
         tier_overrides=tier_overrides,
         suppress_comment=suppress_comment,
         allow_pragma=allow_pragma,
+        respect_gitignore=respect_gitignore,
     )
 
 

@@ -12,6 +12,7 @@ Implementation notes:
 
 from __future__ import annotations
 
+import dataclasses
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ from docpact.baseline import add_suppressions as baseline_add
 from docpact.baseline import diff_suppressions as baseline_diff
 from docpact.config import (
     Config,
+    ConfigError,
     file_ignores_for,
     file_is_excluded,
     load_config,
@@ -31,7 +33,7 @@ from docpact.config import (
 )
 from docpact.fix import apply_fixes, diff_fixes
 from docpact.model.diagnostic import Severity
-from docpact.output import format_json, format_sarif, format_summary, format_text
+from docpact.output import format_json, format_sarif, format_statistics, format_summary, format_text
 from docpact.parser.docstring import GoogleParser, NumpyParser
 from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
 from docpact.rules import load_builtin_rules
@@ -96,6 +98,27 @@ def _collect_py_files(paths: tuple[str, ...], config: Config) -> list[Path]:
             if not file_is_excluded(path, config.exclude):
                 result.append(path)
     return result
+
+
+def _filter_gitignored(files: list[Path], cwd: Path) -> list[Path]:
+    """Remove files that git considers ignored. No-op outside git repos."""
+    if not files:
+        return files
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            input="\n".join(str(f) for f in files),
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+        )
+        # 0 = some ignored, 1 = none ignored, other = not a git repo or error
+        if result.returncode not in (0, 1):
+            return files
+        ignored = {Path(s.strip()).resolve() for s in result.stdout.splitlines() if s.strip()}
+        return [f for f in files if f.resolve() not in ignored]
+    except (subprocess.SubprocessError, OSError, FileNotFoundError):
+        return files
 
 
 def _run_checks(
@@ -214,14 +237,43 @@ def main() -> None:
     "cli_select",
     multiple=True,
     metavar="CODE",
-    help="Rule codes or prefixes to enable (overrides config).",
+    help="Rule codes or prefixes to enable (replaces config select).",
 )
 @click.option(
     "--ignore",
     "cli_ignore",
     multiple=True,
     metavar="CODE",
-    help="Rule codes or prefixes to disable (overrides config).",
+    help="Rule codes or prefixes to disable (replaces config ignore).",
+)
+@click.option(
+    "--extend-select",
+    "cli_extend_select",
+    multiple=True,
+    metavar="CODE",
+    help="Add rule codes or prefixes to the config's select set.",
+)
+@click.option(
+    "--extend-ignore",
+    "cli_extend_ignore",
+    multiple=True,
+    metavar="CODE",
+    help="Add rule codes or prefixes to the config's ignore set.",
+)
+@click.option(
+    "--no-config", "no_config", is_flag=True, help="Ignore all configuration files; use defaults."
+)
+@click.option(
+    "-q", "--quiet", is_flag=True, help="Suppress the summary line; show diagnostics only."
+)
+@click.option(
+    "--statistics", is_flag=True, help="Print per-rule violation counts after diagnostics."
+)
+@click.option(
+    "--no-respect-gitignore",
+    "no_respect_gitignore",
+    is_flag=True,
+    help="Check files even if they are listed in .gitignore.",
 )
 @click.option(
     "--add-suppression",
@@ -253,6 +305,12 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     exit_zero: bool,
     cli_select: tuple[str, ...],
     cli_ignore: tuple[str, ...],
+    cli_extend_select: tuple[str, ...],
+    cli_extend_ignore: tuple[str, ...],
+    no_config: bool,
+    quiet: bool,
+    statistics: bool,
+    no_respect_gitignore: bool,
     add_suppression: bool,
     suppression_reason: str,
     changed_only: str | None,
@@ -261,38 +319,23 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     if unsafe_fixes and not do_fix:
         raise click.UsageError("--unsafe-fixes requires --fix")
 
-    config = load_config(Path.cwd())
+    try:
+        config = Config() if no_config else load_config(Path.cwd())
+    except ConfigError as exc:
+        raise click.UsageError(str(exc)) from exc
 
     if cli_select:
-        config = Config(
-            schema=config.schema,
-            docstring_format=config.docstring_format,
-            select=cli_select,
-            ignore=config.ignore,
-            exclude=config.exclude,
-            heuristics_default=config.heuristics_default,
-            per_file_ignores=config.per_file_ignores,
-            tier_overrides=config.tier_overrides,
-            rule_severities=config.rule_severities,
-            suppress_comment=config.suppress_comment,
-            allow_pragma=config.allow_pragma,
-        )
+        config = dataclasses.replace(config, select=cli_select)
     if cli_ignore:
-        config = Config(
-            schema=config.schema,
-            docstring_format=config.docstring_format,
-            select=config.select,
-            ignore=(*config.ignore, *cli_ignore),
-            exclude=config.exclude,
-            heuristics_default=config.heuristics_default,
-            per_file_ignores=config.per_file_ignores,
-            tier_overrides=config.tier_overrides,
-            rule_severities=config.rule_severities,
-            suppress_comment=config.suppress_comment,
-            allow_pragma=config.allow_pragma,
-        )
+        config = dataclasses.replace(config, ignore=(*config.ignore, *cli_ignore))
+    if cli_extend_select:
+        config = dataclasses.replace(config, select=(*config.select, *cli_extend_select))
+    if cli_extend_ignore:
+        config = dataclasses.replace(config, ignore=(*config.ignore, *cli_extend_ignore))
 
     py_files = _collect_py_files(paths, config)
+    if config.respect_gitignore and not no_respect_gitignore:
+        py_files = _filter_gitignored(py_files, Path.cwd())
     if changed_only is not None:
         changed_set = _get_changed_py_files(changed_only, Path.cwd())
         py_files = [f for f in py_files if f.resolve() in changed_set]
@@ -341,9 +384,14 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         text = format_text(visible, cwd=cwd)
         if text:
             click.echo(text)
-        summary = format_summary(visible)
-        if summary:
-            click.echo(summary)
+        if statistics:
+            stats = format_statistics(visible)
+            if stats:
+                click.echo(stats)
+        if not quiet:
+            summary = format_summary(visible)
+            if summary:
+                click.echo(summary)
     elif output_format == "json":
         click.echo(format_json(visible, cwd=cwd))
     elif output_format == "sarif":
@@ -357,25 +405,22 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
 @click.option("--diff", is_flag=True, help="Show diff without writing files.")
+@click.option(
+    "--no-config", "no_config", is_flag=True, help="Ignore all configuration files; use defaults."
+)
 def generate(  # nodo: DOC012 -- click params; Args section would duplicate --help text
-    paths: tuple[str, ...], diff: bool
+    paths: tuple[str, ...], diff: bool, no_config: bool
 ) -> None:
     """Generate stub docstrings for undocumented functions."""
-    config = load_config(Path.cwd())
+    try:
+        config = Config() if no_config else load_config(Path.cwd())
+    except ConfigError as exc:
+        raise click.UsageError(str(exc)) from exc
     # Only DOC001 produces stubs; no other rule should drive generation.
-    stub_config = Config(
-        schema=config.schema,
-        docstring_format=config.docstring_format,
-        select=("DOC001",),
-        ignore=(),
-        exclude=config.exclude,
-        heuristics_default=config.heuristics_default,
-        per_file_ignores=config.per_file_ignores,
-        tier_overrides=config.tier_overrides,
-        rule_severities=config.rule_severities,
-        suppress_comment=config.suppress_comment,
-    )
+    stub_config = dataclasses.replace(config, select=("DOC001",), ignore=())
     py_files = _collect_py_files(paths, stub_config)
+    if stub_config.respect_gitignore:
+        py_files = _filter_gitignored(py_files, Path.cwd())
     results, suppressions = _run_checks(py_files, stub_config)
     visible = apply_suppressions(results, suppressions)
 

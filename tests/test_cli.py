@@ -393,3 +393,216 @@ def test_pragma_promotes_private_fn_to_tier2(tmp_path: Path) -> None:
         )
     # Tier 2 → DOC012 fires for missing Args.
     assert "DOC012" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --extend-select / --extend-ignore
+# ---------------------------------------------------------------------------
+
+
+def test_extend_select_adds_to_config_select(tmp_path: Path) -> None:
+    """--extend-select appends to config's select rather than replacing it."""
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text(
+            "[project]\nname = 'test'\n[tool.docpact]\nselect = ['MCP']\n"
+        )
+        result = runner.invoke(
+            main,
+            ["check", "--extend-select", "DOC001", "--exit-zero", str(src)],
+            catch_exceptions=False,
+        )
+    # Config selects only MCP; extend-select adds DOC001 on top.
+    assert "DOC001" in result.output
+
+
+def test_select_replaces_config_select(tmp_path: Path) -> None:
+    """--select replaces config's select entirely (contrast with --extend-select)."""
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text(
+            "[project]\nname = 'test'\n[tool.docpact]\nselect = ['DOC']\n"
+        )
+        result = runner.invoke(
+            main,
+            ["check", "--select", "MCP", "--exit-zero", str(src)],
+            catch_exceptions=False,
+        )
+    assert "DOC001" not in result.output
+
+
+def test_extend_ignore_adds_to_config_ignore(tmp_path: Path) -> None:
+    """--extend-ignore adds a code to the ignore set without replacing existing ignores."""
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    result = _run("check", "--extend-ignore", "DOC001", "--exit-zero", str(src))
+    assert "DOC001" not in result.output  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# --no-config
+# ---------------------------------------------------------------------------
+
+
+def test_no_config_ignores_pyproject(tmp_path: Path) -> None:
+    """--no-config runs with defaults, ignoring the nearest pyproject.toml."""
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        # Config restricts to MCP only — with --no-config the default (DOC, MCP) applies.
+        (Path(td) / "pyproject.toml").write_text(
+            "[project]\nname = 'test'\n[tool.docpact]\nselect = ['MCP']\n"
+        )
+        result = runner.invoke(
+            main,
+            ["check", "--no-config", "--exit-zero", str(src)],
+            catch_exceptions=False,
+        )
+    assert "DOC001" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --quiet
+# ---------------------------------------------------------------------------
+
+
+def test_quiet_suppresses_summary_line(tmp_path: Path) -> None:
+    """--quiet shows diagnostics but omits the 'Found N errors.' summary."""
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    result = _run("check", "--quiet", "--select", "DOC001", str(src))
+    assert "DOC001" in result.output  # type: ignore[union-attr]
+    assert "Found" not in result.output  # type: ignore[union-attr]
+
+
+def test_quiet_clean_file_produces_no_output(tmp_path: Path) -> None:
+    """--quiet on a clean file produces no output at all."""
+    src = tmp_path / "t.py"
+    src.write_text('"""Module."""\ndef foo() -> None:\n    """Do foo."""\n')
+    result = _run("check", "--quiet", str(src))
+    assert result.output.strip() == ""  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# --statistics
+# ---------------------------------------------------------------------------
+
+
+def test_statistics_shows_per_rule_counts(tmp_path: Path) -> None:
+    """--statistics prints a per-rule violation count table after diagnostics."""
+    (tmp_path / "a.py").write_text("def foo(): pass\n")
+    (tmp_path / "b.py").write_text("def bar(): pass\n")
+    result = _run("check", "--exit-zero", "--select", "DOC001", "--statistics", str(tmp_path))
+    output = result.output  # type: ignore[union-attr]
+    assert "DOC001" in output
+    assert "2" in output
+
+
+def test_statistics_not_shown_without_flag(tmp_path: Path) -> None:
+    """Without --statistics the count table does not appear."""
+    import re
+
+    src = tmp_path / "t.py"
+    src.write_text("def foo(): pass\ndef bar(): pass\n")
+    result = _run("check", "--exit-zero", "--select", "DOC001", str(src))
+    stat_pattern = re.compile(r"^\d+\s+[A-Z]+\d+\s+")
+    assert not any(
+        stat_pattern.match(line)
+        for line in result.output.split("\n")  # type: ignore[union-attr]
+    )
+
+
+# ---------------------------------------------------------------------------
+# .gitignore respect
+# ---------------------------------------------------------------------------
+
+
+def test_gitignore_respected_by_default() -> None:
+    """Files matching .gitignore are excluded from checks by default."""
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        td_path = Path(td)
+        _init_git_repo(td_path)
+        (td_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        (td_path / ".gitignore").write_text("ignored.py\n")
+        subprocess.run(["git", "add", "."], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=td, check=True, capture_output=True)
+
+        # Create files after commit: ignored.py is untracked + gitignored.
+        (td_path / "ignored.py").write_text("def foo(): pass\n")
+        (td_path / "checked.py").write_text("def bar(): pass\n")
+
+        result = runner.invoke(
+            main,
+            ["check", "--exit-zero", "--select", "DOC001", str(td_path)],
+            catch_exceptions=False,
+        )
+    assert "ignored.py" not in result.output
+    assert "checked.py" in result.output
+
+
+def test_no_respect_gitignore_checks_gitignored_files() -> None:
+    """--no-respect-gitignore forces checking of files that would otherwise be skipped."""
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        td_path = Path(td)
+        _init_git_repo(td_path)
+        (td_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        (td_path / ".gitignore").write_text("ignored.py\n")
+        subprocess.run(["git", "add", "."], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=td, check=True, capture_output=True)
+
+        (td_path / "ignored.py").write_text("def foo(): pass\n")
+
+        result = runner.invoke(
+            main,
+            ["check", "--exit-zero", "--no-respect-gitignore", "--select", "DOC001", str(td_path)],
+            catch_exceptions=False,
+        )
+    assert "ignored.py" in result.output
+
+
+def test_respect_gitignore_false_in_config() -> None:
+    """respect_gitignore = false in config disables gitignore filtering."""
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        td_path = Path(td)
+        _init_git_repo(td_path)
+        (td_path / "pyproject.toml").write_text(
+            "[project]\nname = 'test'\n[tool.docpact]\nrespect_gitignore = false\n"
+        )
+        (td_path / ".gitignore").write_text("ignored.py\n")
+        subprocess.run(["git", "add", "."], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=td, check=True, capture_output=True)
+
+        (td_path / "ignored.py").write_text("def foo(): pass\n")
+
+        result = runner.invoke(
+            main,
+            ["check", "--exit-zero", "--select", "DOC001", str(td_path)],
+            catch_exceptions=False,
+        )
+    assert "ignored.py" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Exit code 2 for config errors
+# ---------------------------------------------------------------------------
+
+
+def test_config_error_exits_two(tmp_path: Path) -> None:
+    """A malformed config file causes exit code 2, not 1."""
+    src = tmp_path / "t.py"
+    src.write_text("def foo(): pass\n")
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text(
+            "[project]\nname = 'test'\n[tool.docpact]\nformat = 'bad-format'\n"
+        )
+        result = runner.invoke(main, ["check", str(src)])
+    assert result.exit_code == 2

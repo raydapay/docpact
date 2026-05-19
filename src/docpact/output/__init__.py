@@ -221,6 +221,40 @@ def format_sarif(results: list[RuleResult], cwd: Path | None = None) -> str:
     )
 
 
+def format_statistics(results: list[RuleResult]) -> str:
+    """Format a per-rule violation count table.
+
+    Each line shows the count, rule code, and rule summary, sorted by count
+    descending (ties broken by code alphabetically).
+
+    Args:
+        results: Diagnostics to count.
+
+    Returns:
+        Multi-line string, one rule per line. Empty string when results is empty.
+    """
+    if not results:
+        return ""
+
+    from docpact.rules._registry import all_rules
+
+    rules = all_rules()
+
+    counts: dict[str, int] = {}
+    for r in results:
+        counts[r.code] = counts.get(r.code, 0) + 1
+
+    sorted_counts = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    width = len(str(sorted_counts[0][1]))
+
+    lines: list[str] = []
+    for code, count in sorted_counts:
+        summary = rules[code][0].summary if code in rules else ""
+        lines.append(f"{count:{width}}  {code}  {summary}")
+
+    return "\n".join(lines)
+
+
 def format_summary(results: list[RuleResult]) -> str:
     """Return a summary line counting errors and warnings separately.
 
