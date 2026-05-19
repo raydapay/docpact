@@ -7,12 +7,42 @@ ships; do not put status in CLAUDE.md.
 
 ## Current status
 
-**v0.1 complete. Codebase is self-hosting. Several v0.2 items already shipped.**
+**v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099,
-MCP001, FIX001–FIX002, TY001–TY002. 607 tests, 96% coverage.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021, DOC050–DOC051,
+DOC099, MCP001, FIX001–FIX002, TY001–TY002. 664 tests, 96% coverage.
 
-Active: maintenance, v0.2 delivery. See "Recent changes" and "v0.2 scope" below.
+No active milestone. See "v0.3 scope" below for what shipped.
+
+---
+
+## Recent changes (post-v0.2)
+
+### v0.3 delivery — 2026-05-19
+
+All four v0.3 priorities shipped in a single session.
+
+- **`--changed-only <ref>`** on `check`: restricts checks to `.py` files that
+  differ from the given git ref (`git diff --name-only <ref> -- '*.py'`),
+  intersected with the normally-collected file list. Exits clearly if not in a
+  git repo or if the ref is invalid.
+
+- **`__all__` awareness in tier assignment**: `parse_all_names()` reads
+  module-level `__all__` as a frozenset of string literals (returns `None` for
+  absent or dynamically constructed `__all__`). New rule 3 in `assign_tier`:
+  functions listed in `__all__` are Tier 2 floor; functions absent from a
+  module that defines `__all__` are Tier 1 ceiling. MCP decorators and
+  file-level config overrides still take priority.
+
+- **Function-level tier pragma** (`# docpact: tier=N`): opt-in via
+  `allow_pragma = true` in `[tool.docpact]`. Parsed by `parse_tier_pragma()`
+  from the `def` line (same placement as `# nodo:`). Values 1–4 only.
+  Applied after `assign_tier()` in `_run_checks`.
+
+- **DOC021** — "Defaults to X" drift: fires at WARNING when an Args entry
+  contains a `Defaults to <value>` phrase whose value does not match the
+  signature default. Detection only; no auto-fix. String defaults are
+  normalised by stripping outer quotes before comparison.
 
 ---
 
@@ -138,7 +168,11 @@ Commits: `db3ae18`, `4c5c8f1`
 
 ## v0.3 scope
 
-### Priorities (ordered)
+### Shipped ✓ (2026-05-19)
+
+All four priorities delivered. See "Recent changes (post-v0.2)" above for detail.
+
+### Priorities (ordered — all done)
 
 1. **`--changed-only <git-ref>`** — restrict checks to files changed relative to a
    git ref (e.g. `main`, `HEAD~1`). Eliminates the adoption path friction for teams

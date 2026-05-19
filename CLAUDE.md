@@ -10,16 +10,12 @@ Copy this file to those names if needed; treat them as equivalent.
 
 ## Current state
 
-**v0.1 complete. v0.2 complete. Codebase is self-hosting.**
+**v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC050–DOC051, DOC099,
-MCP001, FIX001–FIX002, TY001–TY002. 607 tests, 96% coverage.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021, DOC050–DOC051,
+DOC099, MCP001, FIX001–FIX002, TY001–TY002. 664 tests, 96% coverage.
 
-Active work: v0.3 delivery. v0.2 shipped in full — see PROGRESS.md for v0.3 scope.
-
-v0.3 priorities (ordered): `--changed-only <git-ref>`, `__all__` awareness in tier
-assignment, function-level tier pragma (`# docpact: tier=3`), DOC021 (default-value
-drift in Args prose).
+No active milestone. See PROGRESS.md for v0.3 scope and what shipped.
 
 Key facts a fresh session needs:
 - Suppression syntax is `# nodo: CODE -- reason` (not `# noqa`). See ADR-004.
@@ -40,6 +36,12 @@ Key facts a fresh session needs:
   Old key `[tool.docpact.tiers]` still works with a deprecation warning.
 - `--add-suppression` adds `# nodo: CODE -- baseline` to every currently-failing line.
   `--add-suppression --diff` previews without writing. `--suppression-reason TEXT` customises the reason.
+- `--changed-only <ref>` restricts checks to `.py` files changed relative to a git ref.
+  Exits with a clear error if not in a git repo or ref is invalid.
+- When a module defines `__all__` as a literal, tier assignment uses it as the
+  definitive visibility contract: listed → Tier 2 floor; absent → Tier 1 ceiling.
+- `allow_pragma = true` in `[tool.docpact]` enables `# docpact: tier=N` inline on
+  `def` lines to override the assigned tier for that function only. Off by default.
 
 **The project owner is Ray.** Address him directly when asking questions. Ray's
 working preferences are documented below under "Working with Ray."
