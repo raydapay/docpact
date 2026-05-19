@@ -9,8 +9,8 @@ ships; do not put status in CLAUDE.md.
 
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021, DOC050,
-DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002. 720 tests, 94% coverage.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050,
+DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002. 743 tests, 94% coverage.
 DOC051 deferred (see "Deferred with reasoning" below).
 
 No active milestone.
@@ -54,6 +54,22 @@ Addressed 5 of 7 findings from external dry-run on a real FastAPI codebase.
 - `--config` flag for explicit pyproject.toml path.
 - `per-file-tier` glob anchoring to project root.
 Both pair naturally; deferred to a UX pass.
+
+### DOC022 — typed prose annotation mismatch — 2026-05-19
+
+Fires when an Args entry contains an explicit inline type (`name(type): desc` form)
+that doesn't match the parameter's signature annotation. Entries without an inline
+type are ignored entirely — same "only check what you asserted" principle as DOC021.
+
+Comparison is plain string equality after whitespace strip. No semantic
+normalization. Known false positives from notation differences (`Optional[str]` vs
+`str | None`, `List[int]` vs `list[int]`) are documented in the module docstring
+and pinned by tests. Primary target: post-refactoring drift where the signature
+changes from `int` to `float` but the prose isn't updated.
+
+`SectionEntry` gains `type_annotation: str | None = None` (backward-compatible
+default). Parser now propagates `p.annotation` from griffe through both Google
+and NumPy paths.
 
 ### recon-app dry-run follow-up (round 2) — 2026-05-19
 
