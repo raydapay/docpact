@@ -55,6 +55,7 @@ from docpact.rules.doc.doc050_pydantic_field import check_pydantic_fields
 from docpact.rules.fix.fix001_bare_noqa import check_bare_noqa
 from docpact.rules.fix.fix002_no_reason import check_no_reason
 from docpact.rules.fix.fix003_stale_suppression import check_stale_suppressions
+from docpact.rules.fix.fix004_misplaced_suppression import check_misplaced_suppressions
 from docpact.rules.parse.parse001_syntax_error import check_syntax_error as check_parse_syntax_error
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
@@ -144,7 +145,7 @@ def _expand_codes(codes: tuple[str, ...]) -> tuple[str, ...]:
 
 
 _FILE_LEVEL_CODES: frozenset[str] = frozenset(
-    {"FIX001", "FIX002", "FIX003", "DOC002", "DOC003", "DOC050", "PARSE001"}
+    {"FIX001", "FIX002", "FIX003", "FIX004", "DOC002", "DOC003", "DOC050", "PARSE001"}
 )
 
 
@@ -174,6 +175,7 @@ def _run_checks(
         for code, namespace in (
             ("FIX001", "FIX"),
             ("FIX002", "FIX"),
+            ("FIX004", "FIX"),
             ("DOC002", "DOC"),
             ("DOC003", "DOC"),
             ("DOC050", "DOC"),
@@ -203,6 +205,10 @@ def _run_checks(
                             cfg,
                             markers=config.suppress_comment,
                         )
+                    )
+                case "FIX004":
+                    file_results.extend(
+                        check_misplaced_suppressions(source_text, file_suppressions, file_path, cfg)
                     )
                 case "DOC002":
                     file_results.extend(check_module_docstring(source_text, file_path, cfg))
@@ -672,7 +678,9 @@ def list_rules(  # nodo: DOC012 -- click params; Args section would duplicate --
     """List all defined rules with their default severity."""
     import json as _json
 
-    rules = sorted(all_rules().items(), key=lambda kv: kv[0])
+    rules = [
+        (k, v) for k, v in sorted(all_rules().items(), key=lambda kv: kv[0]) if not v[0].reserved
+    ]
 
     if output_format == "json":
         data = [

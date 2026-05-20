@@ -51,6 +51,7 @@ def load_builtin_rules() -> None:
     import docpact.rules.fix.fix001_bare_noqa
     import docpact.rules.fix.fix002_no_reason
     import docpact.rules.fix.fix003_stale_suppression
+    import docpact.rules.fix.fix004_misplaced_suppression
     import docpact.rules.mcp.mcp001_decorator_docstring_conflict
     import docpact.rules.parse.parse001_syntax_error
     import docpact.rules.ty.ty001_none_return_with_returns
