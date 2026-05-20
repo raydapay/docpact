@@ -211,8 +211,11 @@ def test_list_rules_json_contains_all_rules() -> None:
     result = _runner().invoke(main, ["list-rules", "--format", "json"], catch_exceptions=False)
     data = json.loads(result.output)
     codes_in_output = {r["code"] for r in data}
-    for code in all_rules():
-        assert code in codes_in_output
+    for code, (meta, _) in all_rules().items():
+        if meta.reserved:
+            assert code not in codes_in_output
+        else:
+            assert code in codes_in_output
 
 
 def test_list_rules_json_sorted_by_code() -> None:

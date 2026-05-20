@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         default_severity=Severity.ERROR,
         fixable=False,
         unsafe_fixable=False,
+        reserved=True,
     )
 )
 def check(

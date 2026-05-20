@@ -39,6 +39,7 @@ class RuleMetadata:
     default_severity: Severity
     fixable: bool
     unsafe_fixable: bool
+    reserved: bool = False  # True for codes held permanently but never firing
 
 
 _RULES: dict[str, tuple[RuleMetadata, RuleFn]] = {}
