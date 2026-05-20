@@ -29,3 +29,25 @@ jobs:
 
       - name: Verify (non-mutating)
         run: make verify-ci
+
+  verify-windows:
+    name: Verify Windows (Python 3.11)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install make
+        run: choco install make -y
+
+      - name: Verify (non-mutating)
+        run: make verify-ci
