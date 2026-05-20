@@ -79,9 +79,9 @@ def assign_tier(
 
     # Rule 2: Explicit file-level tier override from configuration.
     if tier_overrides:
-        abs_str = str(func.file_path)
+        abs_str = func.file_path.as_posix()
         try:
-            rel_str = str(func.file_path.relative_to(root)) if root else abs_str
+            rel_str = func.file_path.relative_to(root).as_posix() if root else abs_str
         except ValueError:
             rel_str = abs_str
         for pattern, tier_num in tier_overrides.items():

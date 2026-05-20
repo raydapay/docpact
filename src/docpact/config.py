@@ -341,9 +341,11 @@ def file_ignores_for(
     Returns:
         Frozenset of suppressed selectors applicable to this file.
     """
-    abs_str = str(file_path)
+    # as_posix() ensures forward slashes on Windows; str() would produce backslashes
+    # which silently fail to match any user-written pattern.
+    abs_str = file_path.as_posix()
     try:
-        rel_str = str(file_path.relative_to(root))
+        rel_str = file_path.relative_to(root).as_posix()
     except ValueError:
         rel_str = abs_str
     result: set[str] = set()
@@ -390,9 +392,9 @@ def file_tier_override_for(
     Returns:
         The tier number of the first matching pattern, or None.
     """
-    abs_str = str(file_path)
+    abs_str = file_path.as_posix()
     try:
-        rel_str = str(file_path.relative_to(root))
+        rel_str = file_path.relative_to(root).as_posix()
     except ValueError:
         rel_str = abs_str
     for pattern, tier in tier_overrides.items():
@@ -418,9 +420,9 @@ def file_is_excluded(file_path: Path, exclude: tuple[str, ...], root: Path) -> b
     Returns:
         True when the file should be skipped.
     """
-    abs_str = str(file_path)
+    abs_str = file_path.as_posix()
     try:
-        rel_str = str(file_path.relative_to(root))
+        rel_str = file_path.relative_to(root).as_posix()
     except ValueError:
         rel_str = abs_str
     for pattern in exclude:
