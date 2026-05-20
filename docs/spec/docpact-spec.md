@@ -396,7 +396,7 @@ Description of the return value semantics. Omitted for `None` return type. Must 
 One entry per exception type the function may raise under documented conditions. Format: `ExceptionType: condition`. Documents caller-observable exceptions, not internal exceptions always caught. Functions that do not raise may explicitly state so (see section 9.3).
 
 **Examples**
-One or more usage examples. Valid Python expressions are run as doctests when `--doctest` is specified.
+One or more usage examples.
 
 #### Extended sections (Tier 2 and above)
 
@@ -802,18 +802,22 @@ addopts = "--docpact"
 
 [tool.docpact.pytest]
 include = ["DOC", "MCP"]
-run_doctests = true
 ```
 
-### 14.3 Doctest execution (v0.1)
+### 14.3 Doctest execution — permanently out of scope
 
-Examples sections containing valid Python expressions are runnable as doctests via:
+Executing Examples sections as doctests was designed (see §20) but permanently rejected.
+Running arbitrary Python expressions from a structural linter has unbounded side effects:
+network calls, file writes, database mutations, process spawns. No safe sandboxing
+strategy exists that does not require reimplementing a full test harness, which is outside
+docpact's scope.
+
+`DOC098` is reserved so the error code is never reused, but the check is permanently
+empty. To run doctests, use Python's built-in module directly:
 
 ```
-docpact check --doctest src/
+python -m doctest your_module.py
 ```
-
-Failed doctests are reported as `DOC098` (raised an exception) or `DOC099` (output mismatch). The `[FILL]` stub marker causes `DOC099`. Generated stubs cannot pass the pipeline unmodified.
 
 ---
 
