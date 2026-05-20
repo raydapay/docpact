@@ -1,4 +1,4 @@
-.PHONY: help install format format-check lint lint-check typecheck test coverage verify verify-ci docs docs-check dogfood bench bench-update release
+.PHONY: help install format format-check lint lint-check typecheck test coverage verify verify-ci docs docs-check stats-update stats-check dogfood bench bench-update release
 
 # Default target
 help:
@@ -15,6 +15,8 @@ help:
 	@echo "  make verify-ci      Same pipeline, non-mutating (check-only + git diff guard); used in CI and release"
 	@echo "  make docs           Generate docs/rules/*.md from the rule registry"
 	@echo "  make docs-check     Verify docs/rules/*.md matches registry (CI gate)"
+	@echo "  make stats-update   Sync README.md test count and coverage (writes)"
+	@echo "  make stats-check    Verify README.md stats match current suite (CI gate)"
 	@echo "  make dogfood        Run docpact on its own source (self-check)"
 	@echo "  make bench          Run throughput benchmark and compare against baseline"
 	@echo "  make bench-update   Run benchmark and save result as new baseline"
@@ -56,6 +58,12 @@ docs-check:
 	  exit 1; \
 	fi
 
+stats-update:
+	uv run python scripts/update_readme_stats.py
+
+stats-check:
+	uv run python scripts/update_readme_stats.py --check
+
 dogfood:
 	uv run docpact check src/
 
@@ -83,6 +91,7 @@ verify:
 	  $(MAKE) lint && \
 	  $(MAKE) typecheck && \
 	  $(MAKE) coverage && \
+	  $(MAKE) stats-update && \
 	  $(MAKE) docs-check && \
 	  $(MAKE) dogfood && \
 	  echo "Verification successful.") || \
@@ -94,6 +103,7 @@ verify-ci:
 	  $(MAKE) lint-check && \
 	  $(MAKE) typecheck && \
 	  $(MAKE) coverage && \
+	  $(MAKE) stats-check && \
 	  $(MAKE) docs-check && \
 	  $(MAKE) dogfood && \
 	  git diff --exit-code && \
