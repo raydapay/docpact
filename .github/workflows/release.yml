@@ -26,11 +26,27 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Verify
-        run: make verify
+      - name: Verify (non-mutating)
+        run: make verify-ci
+
+      - name: Verify tag matches pyproject version
+        run: |
+          VERSION=$(python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              print(tomllib.load(f)['project']['version'])
+          ")
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "error: tag v$TAG does not match pyproject version $VERSION"
+            exit 1
+          fi
 
       - name: Build
-        run: uv build
+        run: uv build --no-sources
+
+      - name: Validate publish artifacts
+        run: uv publish --dry-run
 
       - name: Publish to PyPI
         run: uv publish

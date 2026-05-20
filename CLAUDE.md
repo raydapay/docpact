@@ -262,8 +262,11 @@ Conversations are working sessions, not customer support.
 # Setup (once)
 uv sync
 
-# The umbrella — run before any commit
+# Before committing — auto-fixes then verifies (writes files)
 make verify
+
+# CI and release use this instead — check-only, no file mutations, git diff guard
+make verify-ci
 
 # Individual targets
 make format        # ruff format (writes)

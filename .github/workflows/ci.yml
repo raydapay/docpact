@@ -8,8 +8,12 @@ on:
 
 jobs:
   verify:
-    name: Verify
+    name: Verify (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -18,28 +22,10 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: uv sync
 
-      - name: ruff format check
-        run: uv run ruff format --check src/ tests/
-
-      - name: ruff lint
-        run: uv run ruff check src/ tests/
-
-      - name: ty typecheck
-        run: uv run ty check src/
-
-      - name: pytest with coverage
-        run: |
-          uv run coverage run -m pytest
-          uv run coverage report -m
-
-      - name: docpact self-check
-        run: uv run docpact check src/
-
-      - name: rule docs up to date
-        run: |
-          uv run python scripts/generate_rule_docs.py
-          git status --short docs/rules/ | grep . && exit 1 || exit 0
+      - name: Verify (non-mutating)
+        run: make verify-ci

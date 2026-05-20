@@ -1,4 +1,4 @@
-.PHONY: help install format format-check lint lint-check typecheck test coverage verify docs docs-check dogfood bench bench-update release
+.PHONY: help install format format-check lint lint-check typecheck test coverage verify verify-ci docs docs-check dogfood bench bench-update release
 
 # Default target
 help:
@@ -11,7 +11,8 @@ help:
 	@echo "  make typecheck      Run static type analysis using ty"
 	@echo "  make test           Run pytest (fast, no coverage)"
 	@echo "  make coverage       Run pytest with coverage (fail_under=85)"
-	@echo "  make verify         Full pipeline: format → lint → typecheck → coverage → docs-check → dogfood"
+	@echo "  make verify         Full pipeline (auto-fix): format → lint → typecheck → coverage → docs-check → dogfood"
+	@echo "  make verify-ci      Same pipeline, non-mutating (check-only + git diff guard); used in CI and release"
 	@echo "  make docs           Generate docs/rules/*.md from the rule registry"
 	@echo "  make docs-check     Verify docs/rules/*.md matches registry (CI gate)"
 	@echo "  make dogfood        Run docpact on its own source (self-check)"
@@ -84,5 +85,17 @@ verify:
 	  $(MAKE) coverage && \
 	  $(MAKE) docs-check && \
 	  $(MAKE) dogfood && \
+	  echo "Verification successful.") || \
+	 (echo "Verification failed."; exit 1)
+
+verify-ci:
+	@echo "Starting CI verification pipeline (non-mutating)..."
+	@($(MAKE) format-check && \
+	  $(MAKE) lint-check && \
+	  $(MAKE) typecheck && \
+	  $(MAKE) coverage && \
+	  $(MAKE) docs-check && \
+	  $(MAKE) dogfood && \
+	  git diff --exit-code && \
 	  echo "Verification successful.") || \
 	 (echo "Verification failed."; exit 1)
