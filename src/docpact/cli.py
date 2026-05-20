@@ -162,7 +162,7 @@ def _run_checks(
     suppressions: dict[Path, dict[int, frozenset[str]]] = {}
 
     for file_path in py_files:
-        source_text = file_path.read_text(errors="replace")
+        source_text = file_path.read_text(encoding="utf-8", errors="replace")
         file_suppressions = parse_suppressions(source_text, markers=config.suppress_comment)
         suppressions[file_path] = file_suppressions
         extra_ignores = file_ignores_for(file_path, config.per_file_ignores, root)
@@ -517,7 +517,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         output_str = format_github(visible, cwd=cwd)
 
     if output_file:
-        Path(output_file).write_text(output_str + "\n" if output_str else "")
+        Path(output_file).write_text(output_str + "\n" if output_str else "", encoding="utf-8")
     elif output_str:
         click.echo(output_str)
 

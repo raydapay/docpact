@@ -21,7 +21,7 @@ classifiers = [
 ]
 dependencies = [
     # Docstring parsing. See ADR-001 for why griffe is the chosen foundation.
-    "griffe>=1.5",
+    "griffe>=1.5,<2.0",
     # CLI framework. click is the standard choice; argparse considered but ergonomics worse for subcommands.
     "click>=8.1",
     # Structured terminal output.

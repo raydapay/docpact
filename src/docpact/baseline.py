@@ -145,7 +145,7 @@ def add_suppressions(
 
     for file_path, line_codes in grouped.items():
         try:
-            source = file_path.read_text(errors="replace")
+            source = file_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
 
@@ -164,7 +164,7 @@ def add_suppressions(
 
         if changed:
             try:
-                file_path.write_text("".join(lines))
+                file_path.write_text("".join(lines), encoding="utf-8")
             except OSError:
                 continue
             counts[file_path] = changed
@@ -199,7 +199,7 @@ def diff_suppressions(
 
     for file_path, line_codes in sorted(grouped.items(), key=lambda kv: str(kv[0])):
         try:
-            source = file_path.read_text(errors="replace")
+            source = file_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
 
