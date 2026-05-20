@@ -138,6 +138,22 @@ This ADR should be reopened if any of the following occur:
 4. **A specific hot loop is identified as the dominant cost.** This may trigger a partial hybrid migration (PyO3 for that layer) rather than a full language change. Document the migration in a follow-up ADR rather than reopening this one.
 5. **griffe ceases to be actively maintained, or its API stability becomes a problem.** This would force either a vendored copy of griffe or a custom docstring parser, either of which significantly weakens the Python case.
 
+   **Early evidence (2026-05-20):** three workarounds already exist in `parser/docstring.py`
+   where griffe's behaviour diverges from docpact's needs:
+   - `_ADMONITION_TO_SECTION` — griffe lowercases and hyphenates admonition names on
+     return; docpact must map them back to canonical capitalised forms.
+   - `_STABILITY_RE` — griffe does not recognise `Stability: value` as a section (the
+     value appears on the same line as the header rather than indented below it); docpact
+     falls back to a regex scan of the raw text.
+   - `_NONE_BODY_RE` — griffe silently drops `Args: None.` sections (the canonical empty
+     form in Google style); docpact recovers them with a second regex pass.
+
+   Note: source extraction in `parser/source.py` already uses pure stdlib `ast` (griffe
+   was evaluated and rejected there for being heavier than needed). The `DocstringParser`
+   protocol isolates the remaining griffe surface to a single file, making a future swap
+   surgical. A custom Python parser for the sections docpact requires is estimated at
+   500–800 lines; it would need its own test suite comparable in depth to the rule tests.
+
 ## References
 
 1. [Astral's stated policy on publishing ruff crates](https://github.com/astral-sh/ruff/issues/14051). "We currently have no plans to publish the crates but we could reconsider for some specific crates if someone's interested in setting up a release process." Issue #14051, with prior context in issue #10417 from 2024.
