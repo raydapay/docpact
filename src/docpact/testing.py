@@ -12,6 +12,7 @@ assertion helpers, not the underlying types, in test code.
 from __future__ import annotations
 
 import inspect
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,10 +27,16 @@ if TYPE_CHECKING:
     from docpact.model.function_info import FunctionInfo
 
 
+@cache
+def _config_format_for(parent: Path) -> str:
+    """Return the docstring format configured for a directory (cached per directory)."""
+    return load_config(parent).config.docstring_format
+
+
 def _parser_for(info: FunctionInfo) -> GoogleParser | NumpyParser:
     """Return the parser configured for the file containing info."""
-    config = load_config(info.file_path.parent).config
-    return NumpyParser() if config.docstring_format == "numpy" else GoogleParser()
+    fmt = _config_format_for(info.file_path.parent)
+    return NumpyParser() if fmt == "numpy" else GoogleParser()
 
 
 def _qualname(func: Callable[..., object]) -> str:

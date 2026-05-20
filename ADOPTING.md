@@ -15,7 +15,7 @@ uv add --dev docpact
 pip install docpact
 ```
 
-Requires Python 3.12+.
+Requires Python 3.11+.
 
 ---
 

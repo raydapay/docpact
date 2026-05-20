@@ -144,6 +144,12 @@ def _expand_codes(codes: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(c.strip() for raw in codes for c in raw.split(",") if c.strip())
 
 
+# Codes handled outside the per-function loop in _run_checks.
+# FIX001/FIX002/FIX004/DOC002/DOC003/DOC050 run as a pre-pass (once per file);
+# FIX003 runs as a post-pass (needs the full file violation set);
+# PARSE001 is emitted on SyntaxError before the function loop runs.
+# Invariant: every code here must appear in _run_checks's match block OR the
+# FIX003 post-pass block. The test_file_level_codes_invariant test enforces this.
 _FILE_LEVEL_CODES: frozenset[str] = frozenset(
     {"FIX001", "FIX002", "FIX003", "FIX004", "DOC002", "DOC003", "DOC050", "PARSE001"}
 )
@@ -313,28 +319,28 @@ def main() -> None:
     "cli_select",
     multiple=True,
     metavar="CODE",
-    help="Rule codes or prefixes to enable (replaces config select).",
+    help="Rule codes or prefixes to enable (replaces config select). Comma-separated OK.",
 )
 @click.option(
     "--ignore",
     "cli_ignore",
     multiple=True,
     metavar="CODE",
-    help="Rule codes or prefixes to disable (extends config ignore).",
+    help="Rule codes or prefixes to disable (extends config ignore). Comma-separated OK.",
 )
 @click.option(
     "--extend-select",
     "cli_extend_select",
     multiple=True,
     metavar="CODE",
-    help="Add rule codes or prefixes to the config's select set.",
+    help="Add rule codes or prefixes to the config's select set. Comma-separated OK.",
 )
 @click.option(
     "--extend-ignore",
     "cli_extend_ignore",
     multiple=True,
     metavar="CODE",
-    help="Add rule codes or prefixes to the config's ignore set.",
+    help="Add rule codes or prefixes to the config's ignore set. Comma-separated OK.",
 )
 @click.option(
     "--config",

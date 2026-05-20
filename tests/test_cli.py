@@ -717,3 +717,30 @@ def test_doc003_fires_when_no_tier_override() -> None:
         (td_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC003"]\n')
         result = runner.invoke(main, ["check", "router.py"], catch_exceptions=False)
     assert "DOC003" in result.output  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# _FILE_LEVEL_CODES invariant
+# ---------------------------------------------------------------------------
+
+
+def test_file_level_codes_matches_dispatch() -> None:
+    """Every code in _FILE_LEVEL_CODES must be handled by _run_checks, and vice versa.
+
+    Pre-pass codes are dispatched in the for-loop match block.
+    FIX003 runs as a post-pass.
+    PARSE001 is emitted on SyntaxError before the function loop.
+    If this test fails, a code was added to one place but not the other.
+    """
+    from docpact.cli import _FILE_LEVEL_CODES  # type: ignore[attr-defined]
+
+    pre_pass = {"FIX001", "FIX002", "FIX004", "DOC002", "DOC003", "DOC050"}
+    post_pass = {"FIX003"}
+    syntax_error_path = {"PARSE001"}
+    expected = pre_pass | post_pass | syntax_error_path
+
+    assert expected == _FILE_LEVEL_CODES, (
+        f"_FILE_LEVEL_CODES is out of sync with _run_checks dispatch.\n"
+        f"  In _FILE_LEVEL_CODES but not dispatched: {_FILE_LEVEL_CODES - expected}\n"
+        f"  Dispatched but not in _FILE_LEVEL_CODES: {expected - _FILE_LEVEL_CODES}"
+    )

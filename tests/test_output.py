@@ -1,4 +1,4 @@
-"""Tests for docpact.output — format_text, format_json, format_summary."""
+"""Tests for docpact.output — format_text, format_json, format_github, format_summary."""
 
 from __future__ import annotations
 
@@ -6,7 +6,13 @@ import json
 from pathlib import Path
 
 from docpact.model.diagnostic import Fix, RuleResult, Severity, SourceLocation
-from docpact.output import format_json, format_summary, format_suppress_hint, format_text
+from docpact.output import (
+    format_github,
+    format_json,
+    format_summary,
+    format_suppress_hint,
+    format_text,
+)
 
 
 def _loc(path: Path, line: int = 1, col: int = 0) -> SourceLocation:
@@ -232,6 +238,105 @@ def test_format_summary_unsafe(tmp_path: Path) -> None:
         unsafe_fix=_fix(f),
     )
     assert "--unsafe-fixes" in format_summary([r])
+
+
+# ---------------------------------------------------------------------------
+# format_github
+# ---------------------------------------------------------------------------
+
+
+def test_format_github_empty_returns_empty_string(tmp_path: Path) -> None:
+    assert format_github([]) == ""
+
+
+def test_format_github_error_level(tmp_path: Path) -> None:
+    r = _result(tmp_path / "f.py")  # Severity.ERROR
+    line = format_github([r])
+    assert line.startswith("::error ")
+
+
+def test_format_github_warning_level(tmp_path: Path) -> None:
+    f = tmp_path / "f.py"
+    r = RuleResult(code="DOC001", severity=Severity.WARNING, message="msg", location=_loc(f))
+    line = format_github([r])
+    assert line.startswith("::warning ")
+
+
+def test_format_github_contains_file_and_line(tmp_path: Path) -> None:
+    f = tmp_path / "src" / "foo.py"
+    r = _result(f, line=42)
+    line = format_github([r])
+    assert "foo.py" in line
+    assert "line=42" in line
+
+
+def test_format_github_column_is_one_based(tmp_path: Path) -> None:
+    f = tmp_path / "f.py"
+    r = RuleResult(code="DOC001", severity=Severity.ERROR, message="msg", location=_loc(f, col=0))
+    line = format_github([r])
+    assert "col=1" in line
+
+
+def test_format_github_title_is_code(tmp_path: Path) -> None:
+    f = tmp_path / "f.py"
+    r = _result(f, code="DOC007")
+    line = format_github([r])
+    assert "title=DOC007" in line
+
+
+def test_format_github_message_appended(tmp_path: Path) -> None:
+    f = tmp_path / "f.py"
+    r = RuleResult(
+        code="DOC001", severity=Severity.ERROR, message="param x missing", location=_loc(f)
+    )
+    line = format_github([r])
+    assert line.endswith("::param x missing")
+
+
+def test_format_github_double_colon_in_message_is_escaped(tmp_path: Path) -> None:
+    f = tmp_path / "f.py"
+    r = RuleResult(code="DOC001", severity=Severity.ERROR, message="a::b", location=_loc(f))
+    line = format_github([r])
+    assert "a%3A%3Ab" in line
+    assert "a::b" not in line.split("::")[-1]
+
+
+def test_format_github_relative_path_when_cwd_provided(tmp_path: Path) -> None:
+    sub = tmp_path / "pkg"
+    sub.mkdir()
+    f = sub / "foo.py"
+    r = _result(f)
+    line = format_github([r], cwd=tmp_path)
+    assert "pkg/foo.py" in line
+    assert str(tmp_path) not in line
+
+
+def test_format_github_multiple_results_one_line_each(tmp_path: Path) -> None:
+    f = tmp_path / "f.py"
+    results = [_result(f, line=1), _result(f, line=2)]
+    output = format_github(results)
+    assert len(output.splitlines()) == 2
+
+
+def test_format_github_cli_format(tmp_path: Path) -> None:
+    from click.testing import CliRunner
+
+    from docpact.cli import main
+
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        result = runner.invoke(
+            main,
+            ["check", "--format", "github", "--exit-zero", str(src)],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+    assert "::error " in result.output or "::warning " in result.output
 
 
 # ---------------------------------------------------------------------------
