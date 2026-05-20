@@ -163,6 +163,13 @@ repos:
 
 It does not replace ruff or ty. It does not import the code it analyzes. It does not perform LLM-based semantic analysis (designed in the spec, explicitly deferred).
 
+## Platform support
+
+Tested on Linux and macOS. Windows is not covered by CI. The core analysis path
+works, but `per-file-tier` and `per-file-ignores` glob patterns use `/` as separator
+and will silently fail to match on Windows where `str(Path(...))` produces `\` paths.
+Track progress on [#7](https://github.com/raydapay/docpact/issues/7).
+
 ## Status
 
 Self-hosting: `docpact` validates its own source on every commit. 810 tests, 94% coverage.
