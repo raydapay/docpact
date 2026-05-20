@@ -149,7 +149,7 @@ def apply_fixes(
             all_conflicts.extend(conflicts)
             continue
 
-        source = file_path.read_bytes()
+        source = file_path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         patched = _apply_to_bytes(source, file_fixes)
         if patched != source:
             file_path.write_bytes(patched)
@@ -182,14 +182,14 @@ def diff_fixes(
         if conflicts:
             continue  # skip conflicting files, same as apply_fixes
 
-        source_bytes = file_path.read_bytes()
+        source_bytes = file_path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         patched_bytes = _apply_to_bytes(source_bytes, file_fixes)
         if patched_bytes == source_bytes:
             continue
 
         source_lines = source_bytes.decode(errors="replace").splitlines(keepends=True)
         patched_lines = patched_bytes.decode(errors="replace").splitlines(keepends=True)
-        path_str = str(file_path)
+        path_str = file_path.as_posix()
         diff = difflib.unified_diff(
             source_lines,
             patched_lines,

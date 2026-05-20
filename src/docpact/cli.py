@@ -121,7 +121,7 @@ def _filter_gitignored(files: list[Path], cwd: Path) -> list[Path]:
     try:
         result = subprocess.run(
             ["git", "check-ignore", "--stdin"],
-            input="\n".join(str(f) for f in files),
+            input="\n".join(f.as_posix() for f in files),
             capture_output=True,
             text=True,
             cwd=cwd,

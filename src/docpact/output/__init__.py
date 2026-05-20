@@ -79,13 +79,15 @@ def format_text(
 
     lines: list[str] = []
     for r in results:
-        path = r.location.file_path
+        path_str = r.location.file_path.as_posix()
         if cwd is not None:
             with contextlib.suppress(ValueError):
-                path = path.relative_to(cwd)
+                path_str = r.location.file_path.relative_to(cwd).as_posix()
 
         fixable = " [*]" if r.fix is not None else ""
-        lines.append(f"{path}:{r.location.line}:{r.location.column}: {r.code}{fixable} {r.message}")
+        lines.append(
+            f"{path_str}:{r.location.line}:{r.location.column}: {r.code}{fixable} {r.message}"
+        )
         if r.fix is not None:
             lines.append(f"  = help: {r.fix.description}")
 
@@ -106,15 +108,15 @@ def _format_text_color(results: list[RuleResult], cwd: Path | None) -> str:
     console = Console(file=sio, highlight=False, no_color=False, width=10000)
 
     for r in results:
-        path = r.location.file_path
+        path_str = r.location.file_path.as_posix()
         if cwd is not None:
             with contextlib.suppress(ValueError):
-                path = path.relative_to(cwd)
+                path_str = r.location.file_path.relative_to(cwd).as_posix()
 
         code_style = "bold red" if r.severity == Severity.ERROR else "bold yellow"
 
         line = Text()
-        line.append(f"{path}:{r.location.line}:{r.location.column}: ")
+        line.append(f"{path_str}:{r.location.line}:{r.location.column}: ")
         line.append(r.code, style=code_style)
         if r.fix is not None:
             line.append(" [*]", style="bold cyan")
@@ -149,17 +151,17 @@ def format_json(results: list[RuleResult], cwd: Path | None = None) -> str:
     """
     diagnostics = []
     for r in results:
-        path = r.location.file_path
+        path_str = r.location.file_path.as_posix()
         if cwd is not None:
             with contextlib.suppress(ValueError):
-                path = path.relative_to(cwd)
+                path_str = r.location.file_path.relative_to(cwd).as_posix()
         diagnostics.append(
             {
                 "code": r.code,
                 "severity": str(r.severity),
                 "message": r.message,
                 "location": {
-                    "file": str(path),
+                    "file": path_str,
                     "line": r.location.line,
                     "column": r.location.column,
                 },
@@ -293,16 +295,16 @@ def format_github(results: list[RuleResult], cwd: Path | None = None) -> str:
 
     lines: list[str] = []
     for r in results:
-        path = r.location.file_path
+        path_str = r.location.file_path.as_posix()
         if cwd is not None:
             with contextlib.suppress(ValueError):
-                path = path.relative_to(cwd)
+                path_str = r.location.file_path.relative_to(cwd).as_posix()
         level = "error" if r.severity == Severity.ERROR else "warning"
         # GitHub annotation syntax uses :: as delimiter; escape any occurrences in the message.
         message = r.message.replace("::", "%3A%3A")
         col = r.location.column + 1  # GitHub uses 1-based columns
         lines.append(
-            f"::{level} file={path},line={r.location.line},col={col},title={r.code}::{message}"
+            f"::{level} file={path_str},line={r.location.line},col={col},title={r.code}::{message}"
         )
     return "\n".join(lines)
 

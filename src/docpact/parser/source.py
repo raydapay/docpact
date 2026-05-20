@@ -128,6 +128,9 @@ def extract_functions(source_path: Path) -> list[FunctionInfo]:
     Stability: beta
     """
     source_bytes = source_path.read_bytes()
+    # Normalize \r\n and bare \r to \n so byte offsets are platform-independent.
+    # Files written back by the fix engine are also normalized, so this is safe.
+    source_bytes = source_bytes.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     source_text = source_bytes.decode("utf-8")
     tree = ast.parse(source_text, filename=str(source_path))
     line_offsets = _build_line_offsets(source_bytes)
