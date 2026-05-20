@@ -1,0 +1,45 @@
+[changelog]
+header = "# Changelog\n\nGenerated from conventional commits. Only `feat:` and `fix:` entries appear.\n"
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] — {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
+{% set breaking_commits = commits | filter(attribute="group", value="Breaking Changes") %}\
+{% if breaking_commits %}
+### Breaking Changes
+{% for commit in breaking_commits %}\
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{% endfor %}
+{% endif %}\
+{% for group, group_commits in commits | group_by(attribute="group") %}\
+{% if group != "Breaking Changes" %}
+### {{ group | upper_first }}
+{% for commit in group_commits %}\
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{% endfor %}
+{% endif %}\
+{% endfor %}\n
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+commit_parsers = [
+  { breaking = true, group = "Breaking Changes" },
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", skip = true },
+  { message = "^docs", skip = true },
+  { message = "^test", skip = true },
+  { message = "^chore", skip = true },
+  { message = "^style", skip = true },
+]
+protect_breaking_commits = true
+filter_commits = true
+tag_pattern = "v[0-9].*"

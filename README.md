@@ -20,6 +20,7 @@ src/tools/users.py:12:0: DOC012 Tier 3 function missing required section: Stabil
 src/tools/notify.py:88:0: TY001 Return annotation is 'None' but Returns section documents a value
 
 Found 4 errors. Run 'docpact check src/ --fix' to apply 1 safe fix.
+hint: to suppress a violation: # nodo: CODE -- reason  (or --add-suppression to baseline all)
 ```
 
 The first error: `payments.py` was refactored from `amount` to `amount_cents` six weeks ago. The docstring wasn't updated. Every agent calling that tool has been generating broken payloads ever since.
@@ -71,7 +72,7 @@ Not every function needs the same documentation depth. An internal helper needs 
 | 1 | Internal | Summary |
 | 2 | Package-public API | Summary, Args (when params present), Returns (when non-None) |
 | 3 | MCP-exposed tools | Tier 2 + Raises, Constraints, Stability, MCP |
-| 4 | FastAPI routes via FastMCP | Same as Tier 3 |
+| 4 | FastAPI routes via FastMCP | Same as Tier 3 — use explicit `per-file-tier` config; auto-detection not yet shipped |
 
 Most projects need no tier config. When automatic assignment doesn't fit — for example, a project using a custom MCP registry instead of `@mcp.tool` decorators — override per file:
 
@@ -118,13 +119,19 @@ suppress_comment = ["nodo"]      # inline suppression marker
 "src/generated/*" = ["DOC"]
 ```
 
-Inline suppression (on the `def` line):
+Inline suppression goes on the `def` keyword line:
 
 ```python
 def build_internal_graph(  # nodo: DOC012 -- internal; tier override not yet wired
     nodes: list[str],
 ) -> Graph: ...
 ```
+
+> **ruff formatter note:** ruff moves trailing comments on a wrapped signature's `def` line to the
+> closing `) -> ReturnType:` line. A suppression comment there will not fire — docpact matches on the
+> `def` line. Put the comment after the opening `(` as shown above; ruff leaves it there.
+
+When you hit a violation and want to suppress it, the error output shows the syntax — no need to look it up.
 
 ## CI integration
 

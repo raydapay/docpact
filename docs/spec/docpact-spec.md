@@ -994,7 +994,7 @@ Optional:    Notes, Alternatives, References, Examples
 ```yaml
 repos:
   - repo: https://github.com/raydapay/docpact
-    rev: main
+    rev: v0.1.0a1
     hooks:
       - id: docpact
         args: [--fix]

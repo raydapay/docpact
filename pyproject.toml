@@ -7,12 +7,13 @@ name = "docpact"
 version = "0.1.0a1"
 description = "Docstring contract validator for Python — MCP, FastAPI, and agent-facing code"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = "MIT"
 keywords = ["docstring", "lint", "mcp", "fastmcp", "contracts", "ci"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Quality Assurance",
@@ -60,7 +61,7 @@ dev = [
 # --------------------------------------------------------------------------
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
@@ -134,3 +135,32 @@ exclude = ["tests/", "scripts/"]
 # boilerplate across every rule with zero signal. The module docstring of each rule file
 # is where the substantive documentation lives; the check() summary line is sufficient.
 "src/docpact/rules/*/*.py" = ["DOC012"]
+
+# --------------------------------------------------------------------------
+# Release tooling (bump-my-version)
+# --------------------------------------------------------------------------
+
+[tool.bumpversion]
+current_version = "0.1.0a1"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)((?P<pre_l>a|b|rc)(?P<pre_n>\\d+))?"
+serialize = [
+    "{major}.{minor}.{patch}{pre_l}{pre_n}",
+    "{major}.{minor}.{patch}",
+]
+commit = false
+tag = false
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "README.md"
+search = "rev: v{current_version}"
+replace = "rev: v{new_version}"
+
+[[tool.bumpversion.files]]
+filename = "docs/spec/docpact-spec.md"
+search = "rev: v{current_version}"
+replace = "rev: v{new_version}"

@@ -33,7 +33,7 @@ Key facts a fresh session needs:
 - File-level rules (DOC002, DOC003, DOC050, FIX001, FIX002) are wired directly in
   `_run_checks` in `cli.py` and skipped in the function-level loop via a code skip set.
 - `format = "numpy"` in `[tool.docpact]` selects `NumpyParser`; default is Google.
-- docpact's own config uses `select = ["DOC", "MCP", "FIX"]` — FIX namespace opted in.
+- docpact's own config uses `select = ["DOC", "MCP", "FIX", "TY", "PARSE"]`.
 - `[tool.docpact.per-file-tier]` overrides tier per glob pattern (e.g. `"src/mcp/*.py" = 3`).
   Old key `[tool.docpact.tiers]` still works with a deprecation warning.
   Patterns are anchored to the project root (directory containing `pyproject.toml`). `load_config`
@@ -144,10 +144,11 @@ that depends on file ordering, environment variables, or wall-clock time is a bu
 docpact must never `import` the code it analyzes. All analysis is static via AST.
 Non-negotiable — agents run docpact on code with arbitrary side effects.
 
-### Use Python 3.12+ features where they help
+### Python version floor
 
-`type X = ...` aliases, PEP 695 generics, `match` where it adds clarity.
-The floor is 3.12; do not avoid modern syntax out of caution.
+The floor is 3.11. `tomllib` is in stdlib from 3.11; that is the binding constraint.
+`match` statements and `importlib.metadata` are fine. PEP 695 `type X = ...` aliases
+and generics are 3.12-only — do not use them.
 
 ---
 
@@ -241,7 +242,13 @@ Conversations are working sessions, not customer support.
 
 - **Subject** ≤70 chars, imperative mood, no trailing period.
   Prefixes: `feat:`, `fix:`, `docs:`, `chore:`, `test:`, `refactor:`.
-  Optional scope: `docs(adr):`, `fix(parser):`.
+  Optional scope: `docs(adr):`, `fix(cli):`.
+- **Breaking changes — required, not optional.** Any commit that removes, renames,
+  or changes the contract of a public API (CLI flags, config keys, error codes,
+  programmatic API) **must** use `!` after the type: `feat!:` or `feat(cli)!:`.
+  **Must** also include a `BREAKING CHANGE:` footer paragraph stating what breaks
+  and how to migrate. Without both, git-cliff silently omits the entry from the
+  Breaking Changes section — the release is published with no warning to users.
 - **Body** explains *why*, 72-char wrap. Trade-offs noted.
 - `###` headers for multiple unrelated areas; bullets for a single area.
 - **No `Co-Authored-By:` trailer.** Every commit is collaborative; the trailer
@@ -275,6 +282,21 @@ uv run pytest -x -k DOC007          # stop on first failure
 uv run pytest --lf                   # last-failed only
 ```
 
+### Releasing
+
+Requires a clean working tree on `main`.
+
+```bash
+make release VERSION=0.2.0   # verify → bump files → generate CHANGELOG.md → commit → tag
+git push --follow-tags        # triggers .github/workflows/release.yml
+```
+
+`make release` updates `pyproject.toml`, `README.md`, and `docs/spec/docpact-spec.md`
+atomically via `bump-my-version`, then generates `CHANGELOG.md` from conventional
+commits via `git-cliff` (`feat:` and `fix:` only; breaking changes first).
+The GitHub Actions release workflow builds, publishes to PyPI, and creates a
+GitHub Release with the generated notes.
+
 Type-check suppressions: if `ty check` forces a `# ty: ignore[…]`, justify it
 in the commit body. Prefer a narrowing assertion at the call site when it
 reflects a real runtime invariant.
@@ -291,6 +313,8 @@ reflects a real runtime invariant.
 5. New public APIs have docstrings that conform to docpact's own schema.
 6. Non-trivial decisions not covered by the spec or an existing ADR have a new
    ADR drafted and proposed to Ray.
+7. Any breaking change has `!` in the commit subject and a `BREAKING CHANGE:`
+   footer. No exceptions — the automated pipeline has no other way to flag it.
 
 ---
 
@@ -301,6 +325,8 @@ reflects a real runtime invariant.
 - **Adding a dependency to `pyproject.toml`.** Every dep is a long-term commitment.
 - **Introducing a new architectural pattern.** Needs an ADR and Ray's sign-off.
 - **Reordering or renaming error codes.** Stable API — once shipped, never reused.
+- **Any breaking public API change without the mandatory commit markers.** Use `!`
+  and `BREAKING CHANGE:` footer — see "Commit message style". No exceptions.
 - **Adding features beyond the current scope.** See `docs/PROGRESS.md` for what
   is in and out of scope for the current milestone.
 - **Changing tier assignment rules.** Deterministic by design. See ADR-003.

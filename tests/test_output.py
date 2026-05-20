@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from docpact.model.diagnostic import Fix, RuleResult, Severity, SourceLocation
-from docpact.output import format_json, format_summary, format_text
+from docpact.output import format_json, format_summary, format_suppress_hint, format_text
 
 
 def _loc(path: Path, line: int = 1, col: int = 0) -> SourceLocation:
@@ -235,6 +235,22 @@ def test_format_summary_unsafe(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# format_suppress_hint
+# ---------------------------------------------------------------------------
+
+
+def test_format_suppress_hint_contains_marker() -> None:
+    hint = format_suppress_hint("nodo")
+    assert "# nodo: CODE -- reason" in hint
+    assert "--add-suppression" in hint
+
+
+def test_format_suppress_hint_custom_marker() -> None:
+    hint = format_suppress_hint("mymarker")
+    assert "# mymarker:" in hint
+
+
+# ---------------------------------------------------------------------------
 # CLI integration: --format json and noqa suppression
 # ---------------------------------------------------------------------------
 
@@ -301,3 +317,58 @@ def test_cli_nodo_with_wrong_code_does_not_suppress(tmp_path: Path) -> None:
         )
 
     assert "DOC001" in result.output
+
+
+def test_cli_hint_shown_when_violations(tmp_path: Path) -> None:
+    from click.testing import CliRunner
+
+    from docpact.cli import main
+
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        result = runner.invoke(main, ["check", "--exit-zero", str(src)], catch_exceptions=False)
+
+    assert "hint:" in result.output
+    assert "nodo" in result.output
+    assert "--add-suppression" in result.output
+
+
+def test_cli_hint_not_shown_when_no_violations(tmp_path: Path) -> None:
+    from click.testing import CliRunner
+
+    from docpact.cli import main
+
+    src = tmp_path / "t.py"
+    src.write_text(
+        '"""Module."""\n\n\ndef foo(x: int) -> None:\n'
+        '    """Do foo.\n\n    Args:\n        x: An integer.\n    """\n'
+    )
+
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        result = runner.invoke(main, ["check", "--exit-zero", str(src)], catch_exceptions=False)
+
+    assert "hint:" not in result.output
+
+
+def test_cli_hint_not_shown_when_quiet(tmp_path: Path) -> None:
+    from click.testing import CliRunner
+
+    from docpact.cli import main
+
+    src = tmp_path / "t.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        (Path(td) / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        result = runner.invoke(
+            main, ["check", "--quiet", "--exit-zero", str(src)], catch_exceptions=False
+        )
+
+    assert "hint:" not in result.output

@@ -3,4 +3,10 @@
 See docs/spec/docpact-spec.md for the full specification.
 """
 
-__version__ = "0.1.0.dev0"
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version
+
+try:
+    __version__ = _version("docpact")
+except PackageNotFoundError:
+    __version__ = "unknown"

@@ -1,4 +1,4 @@
-.PHONY: help install format format-check lint lint-check typecheck test coverage verify docs docs-check dogfood bench bench-update
+.PHONY: help install format format-check lint lint-check typecheck test coverage verify docs docs-check dogfood bench bench-update release
 
 # Default target
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  make dogfood        Run docpact on its own source (self-check)"
 	@echo "  make bench          Run throughput benchmark and compare against baseline"
 	@echo "  make bench-update   Run benchmark and save result as new baseline"
+	@echo "  make release        Cut a release: make release VERSION=x.y.z"
 
 install:
 	uv sync
@@ -62,6 +63,18 @@ bench:
 
 bench-update:
 	uv run python scripts/bench.py --update
+
+release:
+	@test -n "$(VERSION)" || (echo "usage: make release VERSION=x.y.z"; exit 1)
+	@git diff --quiet && git diff --cached --quiet || (echo "error: working tree is not clean"; exit 1)
+	$(MAKE) verify
+	uvx bump-my-version bump --new-version $(VERSION) --no-commit --no-tag --allow-dirty
+	uvx git-cliff --tag v$(VERSION) --output CHANGELOG.md
+	git add pyproject.toml README.md docs/spec/docpact-spec.md CHANGELOG.md
+	git commit -m "chore: release v$(VERSION)"
+	git tag -a "v$(VERSION)" -m "v$(VERSION)"
+	@echo ""
+	@echo "Release v$(VERSION) tagged. Run: git push --follow-tags"
 
 verify:
 	@echo "Starting full verification pipeline..."

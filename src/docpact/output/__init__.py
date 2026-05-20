@@ -341,6 +341,21 @@ def format_statistics(results: list[RuleResult]) -> str:
     return "\n".join(lines)
 
 
+def format_suppress_hint(suppress_marker: str) -> str:
+    """Return a one-line footer hint showing the suppression syntax.
+
+    Args:
+        suppress_marker: The configured suppression keyword (e.g. "nodo").
+
+    Returns:
+        Hint string, always non-empty.
+    """
+    return (
+        f"hint: to suppress a violation: # {suppress_marker}: CODE -- reason"
+        "  (or --add-suppression to baseline all)"
+    )
+
+
 def format_summary(results: list[RuleResult]) -> str:
     """Return a summary line counting errors and warnings separately.
 

@@ -42,6 +42,7 @@ from docpact.output import (
     format_sarif,
     format_statistics,
     format_summary,
+    format_suppress_hint,
     format_text,
 )
 from docpact.parser.docstring import GoogleParser, NumpyParser
@@ -505,6 +506,8 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             summary = format_summary(visible)
             if summary:
                 parts.append(summary)
+            if visible:
+                parts.append(format_suppress_hint(config.suppress_comment[0]))
         output_str = "\n".join(parts)
     elif output_format == "json":
         output_str = format_json(visible, cwd=cwd)
