@@ -1,8 +1,8 @@
 # docpact — Specification
 
-**Version:** 0.3.3  
+**Version:** 0.3.4  
 **Status:** Active — v0.1 complete, v0.2 complete, v0.3 complete  
-**Last revised:** 2026-05-19
+**Last revised:** 2026-05-21
 
 ---
 
@@ -521,11 +521,13 @@ Tier assignment is deterministic. Rules are evaluated in order; the first match 
 
 **Required:** Summary, Args (all parameters), Returns (if non-None).
 **Recommended:** Raises, Constraints, Stability.
+**Conditionally required:** Examples when `require_examples_min_tier ≤ 2` (see §10.6).
 
 ### 10.4 Tier 3 — MCP-exposed functions
 
 **Required:** Summary, Args (all parameters), Returns, Raises, Constraints, Stability, and either `MCP:` section or `description=` in decorator (not both).
 **Recommended:** Mutates, See Also.
+**Conditionally required:** Examples when `require_examples_min_tier ≤ 3` (see §10.6). For MCP-exposed tools, Examples is the highest-signal section for tool-calling agents; setting `require_examples_min_tier = 3` is the recommended posture for MCP-first codebases.
 
 ### 10.5 Tier 4 — FastAPI routes exposed via `FastMCP.from_fastapi()`
 
@@ -539,6 +541,22 @@ Tier assignment is deterministic. Rules are evaluated in order; the first match 
 **Trigger (v0.2+):** Heuristic detection. See section 12.3.
 
 **Required:** Same as Tier 3. `MCP001` fires if both a docstring `MCP:` section and a FastAPI route `summary=`/`description=` are present with different content.
+**Conditionally required:** Examples when `require_examples_min_tier ≤ 4` (see §10.6).
+
+### 10.6 Configurable section requirements
+
+**`require_examples_min_tier`** (integer, default: none / disabled)
+
+When set, `Examples:` becomes required for every function whose tier is ≥ the configured value. `DOC052` (error) fires when the section is absent. A safe fix (`--fix`) inserts an `Examples:` stub with a `[FILL]` marker at the end of the docstring body.
+
+```toml
+[tool.docpact]
+require_examples_min_tier = 3  # require Examples: at Tier 3 and above
+```
+
+The option is off by default. Setting it to `3` is the recommended posture for MCP-first codebases; setting it to `2` enforces Examples across all public API. Values below `1` or above `4` are a configuration error.
+
+`DOC052` is subject to the same per-file and inline suppression mechanisms as all other rules.
 
 ---
 
@@ -564,6 +582,7 @@ Applies fixes that are unambiguous and do not alter semantic content:
 | Trailing whitespace in docstring lines | Remove |
 | Empty section with non-canonical form (`DOC013`) | Replace with `None.` |
 | Constraint duplicates `Annotated` metadata (`DOC051`, deferred) | Remove the duplicating prose entry |
+| `Examples:` absent and `require_examples_min_tier` ≤ tier (`DOC052`) | Append `Examples:\n    [FILL]` at end of docstring body |
 
 Conditions where `--fix` reports an error and does not apply a fix:
 
@@ -845,6 +864,10 @@ format = "google"
 # Inline suppression marker(s). Default: ["nodo"].
 # Add "noqa" during migration from # noqa: syntax.
 suppress_comment = ["nodo"]
+
+# Require Examples: section at or above this tier. Off by default.
+# Recommended value for MCP-first codebases: 3.
+# require_examples_min_tier = 3
 
 # Default severity for all HEUR rules.
 heuristics = "warning"
