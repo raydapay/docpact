@@ -58,6 +58,7 @@ class Config:
     suppress_comment: tuple[str, ...] = ("nodo",)
     allow_pragma: bool = False
     respect_gitignore: bool = True
+    require_examples_min_tier: int | None = None
 
 
 _SEVERITY_MAP: dict[str, Severity] = {
@@ -179,6 +180,13 @@ def _parse_section(raw: dict[str, object]) -> Config:
             raise ConfigError("respect_gitignore: expected a boolean")
         respect_gitignore = v
 
+    require_examples_min_tier: int | None = None
+    if "require_examples_min_tier" in raw:
+        v = raw["require_examples_min_tier"]
+        if not isinstance(v, int) or v not in (1, 2, 3, 4):
+            raise ConfigError("require_examples_min_tier: must be an integer 1-4")
+        require_examples_min_tier = v
+
     return Config(
         schema=schema,
         docstring_format=docstring_format,
@@ -192,6 +200,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
         suppress_comment=suppress_comment,
         allow_pragma=allow_pragma,
         respect_gitignore=respect_gitignore,
+        require_examples_min_tier=require_examples_min_tier,
     )
 
 

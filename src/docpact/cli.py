@@ -237,7 +237,10 @@ def _run_function_level_rules(
             pragma_tier = parse_tier_pragma(line_text)
             if pragma_tier is not None:
                 tier = pragma_tier
-        config_options: dict[str, object] = {"tier": tier}
+        config_options: dict[str, object] = {
+            "tier": tier,
+            "require_examples_min_tier": config.require_examples_min_tier,
+        }
         for meta, rule_fn in rules.values():
             if meta.code in _FILE_LEVEL_CODES:
                 continue  # handled as file-level or post-pass rules
