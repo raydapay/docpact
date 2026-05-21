@@ -401,6 +401,24 @@ def main() -> None:
     default=None,
     help="Restrict checks to .py files changed relative to REF (e.g. main, HEAD~1).",
 )
+@click.option(
+    "--show-files",
+    "show_files",
+    is_flag=True,
+    help="Print the list of files that would be checked and exit without running rules.",
+)
+@click.option(
+    "--exit-non-zero-on-fix",
+    "exit_non_zero_on_fix",
+    is_flag=True,
+    help="Exit 1 if --fix modified any files, even when no violations remain.",
+)
+@click.option(
+    "--error-on-warning",
+    "error_on_warning",
+    is_flag=True,
+    help="Treat warning-severity diagnostics as errors for the purpose of the exit code.",
+)
 def check(  # nodo: DOC012 -- click params; Args section would duplicate --help text
     paths: tuple[str, ...],
     do_fix: bool,
@@ -422,6 +440,9 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     add_suppression: bool,
     suppression_reason: str,
     changed_only: str | None,
+    show_files: bool,
+    exit_non_zero_on_fix: bool,
+    error_on_warning: bool,
 ) -> None:
     """Check docstrings against the configured schema."""
     if unsafe_fixes and not do_fix:
@@ -459,6 +480,16 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     if changed_only is not None:
         changed_set = _get_changed_py_files(changed_only, Path.cwd())
         py_files = [f for f in py_files if f.resolve() in changed_set]
+
+    if show_files:
+        cwd = Path.cwd()
+        for f in py_files:
+            try:
+                click.echo(f.relative_to(cwd).as_posix())
+            except ValueError:
+                click.echo(f.as_posix())
+        sys.exit(0)
+
     results, suppressions = _run_checks(py_files, config, config_root)
 
     apply_unsafe = unsafe_fixes and do_fix
@@ -470,8 +501,10 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             click.echo(patch, nl=False)
         sys.exit(0)
 
+    files_were_modified = False
     if do_fix:
         modified, conflicts = apply_fixes(results, unsafe=apply_unsafe)
+        files_were_modified = bool(modified)
         for conflict in conflicts:
             click.echo(f"warning: {conflict}", err=True)
         # Re-run checks on modified files so reported results reflect post-fix state.
@@ -533,8 +566,11 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     elif output_str:
         click.echo(output_str)
 
-    has_errors = any(r.severity == Severity.ERROR for r in visible)
-    if has_errors and not exit_zero:
+    should_exit_one = (files_were_modified and exit_non_zero_on_fix) or any(
+        r.severity == Severity.ERROR or (error_on_warning and r.severity == Severity.WARNING)
+        for r in visible
+    )
+    if should_exit_one and not exit_zero:
         sys.exit(1)
 
 

@@ -744,3 +744,94 @@ def test_file_level_codes_matches_dispatch() -> None:
         f"  In _FILE_LEVEL_CODES but not dispatched: {_FILE_LEVEL_CODES - expected}\n"
         f"  Dispatched but not in _FILE_LEVEL_CODES: {expected - _FILE_LEVEL_CODES}"
     )
+
+
+# ---------------------------------------------------------------------------
+# --show-files
+# ---------------------------------------------------------------------------
+
+
+def test_show_files_lists_py_files(tmp_path: Path) -> None:
+    """--show-files prints checked files and exits 0 without running rules."""
+    (tmp_path / "a.py").write_text("def foo(): pass\n")
+    (tmp_path / "b.py").write_text("def bar(): pass\n")
+    result = _run("check", "--show-files", str(tmp_path))
+    assert result.exit_code == 0  # type: ignore[union-attr]
+    output = result.output  # type: ignore[union-attr]
+    assert "a.py" in output
+    assert "b.py" in output
+
+
+def test_show_files_exits_zero_despite_errors(tmp_path: Path) -> None:
+    """--show-files exits 0 even when the file has violations."""
+    (tmp_path / "bad.py").write_text("def foo(): pass\n")
+    result = _run("check", "--show-files", "--select", "DOC001", str(tmp_path))
+    assert result.exit_code == 0  # type: ignore[union-attr]
+
+
+def test_show_files_empty_dir(tmp_path: Path) -> None:
+    """--show-files on a directory with no .py files produces no output."""
+    result = _run("check", "--show-files", str(tmp_path))
+    assert result.exit_code == 0  # type: ignore[union-attr]
+    assert result.output.strip() == ""  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# --exit-non-zero-on-fix
+# ---------------------------------------------------------------------------
+
+
+def test_exit_non_zero_on_fix_exits_one_when_files_changed(tmp_path: Path) -> None:
+    """--exit-non-zero-on-fix exits 1 when --fix modifies at least one file."""
+    src = tmp_path / "f.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    result = _run("check", "--fix", "--exit-non-zero-on-fix", "--select", "DOC001", str(src))
+    assert result.exit_code == 1  # type: ignore[union-attr]
+
+
+def test_exit_non_zero_on_fix_exits_zero_when_nothing_changed(tmp_path: Path) -> None:
+    """--exit-non-zero-on-fix exits 0 when --fix makes no changes."""
+    src = tmp_path / "f.py"
+    src.write_text('"""Module."""\n\n\ndef foo() -> None:\n    """Do foo."""\n')
+    result = _run("check", "--fix", "--exit-non-zero-on-fix", str(src))
+    assert result.exit_code == 0  # type: ignore[union-attr]
+
+
+def test_exit_zero_overrides_exit_non_zero_on_fix(tmp_path: Path) -> None:
+    """--exit-zero takes precedence over --exit-non-zero-on-fix."""
+    src = tmp_path / "f.py"
+    src.write_text("def foo(x: int) -> None:\n    pass\n")
+    result = _run(
+        "check", "--fix", "--exit-non-zero-on-fix", "--exit-zero", "--select", "DOC001", str(src)
+    )
+    assert result.exit_code == 0  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# --error-on-warning
+# ---------------------------------------------------------------------------
+
+
+def test_error_on_warning_exits_one_for_warnings(tmp_path: Path) -> None:
+    """--error-on-warning causes warning-severity violations to produce exit 1."""
+    # DOC002 (module docstring missing) is WARNING severity.
+    src = tmp_path / "f.py"
+    src.write_text("def foo() -> None:\n    pass\n")
+    result = _run("check", "--error-on-warning", "--select", "DOC002", str(src))
+    assert result.exit_code == 1  # type: ignore[union-attr]
+
+
+def test_warnings_do_not_exit_one_without_flag(tmp_path: Path) -> None:
+    """Without --error-on-warning, warning-severity violations exit 0."""
+    src = tmp_path / "f.py"
+    src.write_text("def foo() -> None:\n    pass\n")
+    result = _run("check", "--select", "DOC002", str(src))
+    assert result.exit_code == 0  # type: ignore[union-attr]
+
+
+def test_exit_zero_overrides_error_on_warning(tmp_path: Path) -> None:
+    """--exit-zero takes precedence over --error-on-warning."""
+    src = tmp_path / "f.py"
+    src.write_text("def foo() -> None:\n    pass\n")
+    result = _run("check", "--error-on-warning", "--exit-zero", "--select", "DOC002", str(src))
+    assert result.exit_code == 0  # type: ignore[union-attr]
