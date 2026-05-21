@@ -48,7 +48,7 @@ from docpact.output import (
 from docpact.parser.docstring import GoogleParser, NumpyParser
 from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
 from docpact.rules import load_builtin_rules
-from docpact.rules._registry import RuleConfig, all_rules
+from docpact.rules._registry import RuleConfig, RuleFn, RuleMetadata, all_rules
 from docpact.rules.doc.doc002_module_docstring import check_module_docstring
 from docpact.rules.doc.doc003_class_docstring import check_class_docstrings
 from docpact.rules.doc.doc050_pydantic_field import check_pydantic_fields
@@ -64,6 +64,7 @@ load_builtin_rules()
 
 if TYPE_CHECKING:
     from docpact.model.diagnostic import RuleResult
+    from docpact.model.function_info import FunctionInfo
 
 
 def _get_changed_py_files(ref: str, cwd: Path) -> set[Path]:
@@ -155,6 +156,103 @@ _FILE_LEVEL_CODES: frozenset[str] = frozenset(
 )
 
 
+def _run_file_level_rules(
+    file_path: Path,
+    source_text: str,
+    file_suppressions: dict[int, frozenset[str]],
+    extra_ignores: frozenset[str],
+    config: Config,
+    root: Path,
+    rules: dict[str, tuple[RuleMetadata, RuleFn]],
+) -> list[RuleResult]:
+    """Run pre-pass file-level rules (FIX001/002/004, DOC002/003/050) once per file."""
+    file_results: list[RuleResult] = []
+    for code, namespace in (
+        ("FIX001", "FIX"),
+        ("FIX002", "FIX"),
+        ("FIX004", "FIX"),
+        ("DOC002", "DOC"),
+        ("DOC003", "DOC"),
+        ("DOC050", "DOC"),
+    ):
+        if code not in rules:
+            continue
+        meta, _ = rules[code]
+        if not rule_is_enabled(code, namespace, config.select, config.ignore):
+            continue
+        if rule_is_file_ignored(code, namespace, extra_ignores):
+            continue
+        severity = config.rule_severities.get(code, meta.default_severity)
+        if severity == Severity.OFF:
+            continue
+        cfg = RuleConfig(severity=severity, options={})
+        match code:
+            case "FIX001":
+                file_results.extend(check_bare_noqa(source_text, file_suppressions, file_path, cfg))
+            case "FIX002":
+                file_results.extend(
+                    check_no_reason(
+                        source_text,
+                        file_suppressions,
+                        file_path,
+                        cfg,
+                        markers=config.suppress_comment,
+                    )
+                )
+            case "FIX004":
+                file_results.extend(
+                    check_misplaced_suppressions(source_text, file_suppressions, file_path, cfg)
+                )
+            case "DOC002":
+                file_results.extend(check_module_docstring(source_text, file_path, cfg))
+            case "DOC003":
+                # per-file-tier = 1 silences DOC003 for classes in that file,
+                # consistent with how tier 1 silences function-level rules.
+                if file_tier_override_for(file_path, config.tier_overrides, root) != 1:
+                    file_results.extend(check_class_docstrings(source_text, file_path, cfg))
+            case "DOC050":
+                file_results.extend(check_pydantic_fields(source_text, file_path, cfg))
+    return file_results
+
+
+def _run_function_level_rules(
+    file_path: Path,
+    functions: list[FunctionInfo],
+    source_text: str,
+    parser: GoogleParser | NumpyParser,
+    all_names: frozenset[str] | None,
+    extra_ignores: frozenset[str],
+    config: Config,
+    root: Path,
+    rules: dict[str, tuple[RuleMetadata, RuleFn]],
+) -> list[RuleResult]:
+    """Run function-level rules for every function definition in one file."""
+    source_lines = source_text.splitlines()
+    file_results: list[RuleResult] = []
+    for func in functions:
+        doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
+        tier = assign_tier(func, config.tier_overrides, all_names=all_names, root=root)
+        if config.allow_pragma:
+            line_text = source_lines[func.line - 1] if 0 < func.line <= len(source_lines) else ""
+            pragma_tier = parse_tier_pragma(line_text)
+            if pragma_tier is not None:
+                tier = pragma_tier
+        config_options: dict[str, object] = {"tier": tier}
+        for meta, rule_fn in rules.values():
+            if meta.code in _FILE_LEVEL_CODES:
+                continue  # handled as file-level or post-pass rules
+            if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
+                continue
+            if rule_is_file_ignored(meta.code, meta.namespace, extra_ignores):
+                continue
+            severity = config.rule_severities.get(meta.code, meta.default_severity)
+            if severity == Severity.OFF:
+                continue
+            cfg = RuleConfig(severity=severity, options=config_options)
+            file_results.extend(rule_fn(func, doc, cfg))
+    return file_results
+
+
 def _run_checks(
     py_files: list[Path],
     config: Config,
@@ -175,59 +273,11 @@ def _run_checks(
         extra_ignores = file_ignores_for(file_path, config.per_file_ignores, root)
 
         # Accumulate per-file so FIX003 can inspect the full violation set.
-        file_results: list[RuleResult] = []
-
-        # File-level rules: run once per file before function-level rules.
-        for code, namespace in (
-            ("FIX001", "FIX"),
-            ("FIX002", "FIX"),
-            ("FIX004", "FIX"),
-            ("DOC002", "DOC"),
-            ("DOC003", "DOC"),
-            ("DOC050", "DOC"),
-        ):
-            if code not in rules:
-                continue
-            meta, _ = rules[code]
-            if not rule_is_enabled(code, namespace, config.select, config.ignore):
-                continue
-            if rule_is_file_ignored(code, namespace, extra_ignores):
-                continue
-            severity = config.rule_severities.get(code, meta.default_severity)
-            if severity == Severity.OFF:
-                continue
-            cfg = RuleConfig(severity=severity, options={})
-            match code:
-                case "FIX001":
-                    file_results.extend(
-                        check_bare_noqa(source_text, file_suppressions, file_path, cfg)
-                    )
-                case "FIX002":
-                    file_results.extend(
-                        check_no_reason(
-                            source_text,
-                            file_suppressions,
-                            file_path,
-                            cfg,
-                            markers=config.suppress_comment,
-                        )
-                    )
-                case "FIX004":
-                    file_results.extend(
-                        check_misplaced_suppressions(source_text, file_suppressions, file_path, cfg)
-                    )
-                case "DOC002":
-                    file_results.extend(check_module_docstring(source_text, file_path, cfg))
-                case "DOC003":
-                    # per-file-tier = 1 silences DOC003 for classes in that file,
-                    # consistent with how tier 1 silences function-level rules.
-                    if file_tier_override_for(file_path, config.tier_overrides, root) != 1:
-                        file_results.extend(check_class_docstrings(source_text, file_path, cfg))
-                case "DOC050":
-                    file_results.extend(check_pydantic_fields(source_text, file_path, cfg))
+        file_results = _run_file_level_rules(
+            file_path, source_text, file_suppressions, extra_ignores, config, root, rules
+        )
 
         all_names = parse_all_names(source_text)
-        source_lines = source_text.splitlines()
 
         try:
             functions = extract_functions(file_path)
@@ -245,29 +295,19 @@ def _run_checks(
             results.extend(file_results)
             continue
 
-        for func in functions:
-            doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
-            tier = assign_tier(func, config.tier_overrides, all_names=all_names, root=root)
-            if config.allow_pragma:
-                line_text = (
-                    source_lines[func.line - 1] if 0 < func.line <= len(source_lines) else ""
-                )
-                pragma_tier = parse_tier_pragma(line_text)
-                if pragma_tier is not None:
-                    tier = pragma_tier
-            config_options: dict[str, object] = {"tier": tier}
-            for meta, rule_fn in rules.values():
-                if meta.code in _FILE_LEVEL_CODES:
-                    continue  # handled as file-level rules (pre- or post-pass)
-                if not rule_is_enabled(meta.code, meta.namespace, config.select, config.ignore):
-                    continue
-                if rule_is_file_ignored(meta.code, meta.namespace, extra_ignores):
-                    continue
-                severity = config.rule_severities.get(meta.code, meta.default_severity)
-                if severity == Severity.OFF:
-                    continue
-                cfg = RuleConfig(severity=severity, options=config_options)
-                file_results.extend(rule_fn(func, doc, cfg))
+        file_results.extend(
+            _run_function_level_rules(
+                file_path,
+                functions,
+                source_text,
+                parser,
+                all_names,
+                extra_ignores,
+                config,
+                root,
+                rules,
+            )
+        )
 
         # FIX003 post-pass: needs the complete violation set for this file.
         if (
