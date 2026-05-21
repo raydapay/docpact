@@ -96,11 +96,11 @@ def main() -> None:
     wrote = skipped = 0
     for code, (meta, _) in sorted(rules.items()):
         page_path = out_dir / f"{code}.md"
-        if page_path.exists() and "<!-- TODO:" not in page_path.read_text():
+        if page_path.exists() and "<!-- TODO:" not in page_path.read_text(encoding="utf-8"):
             print(f"  skip  {page_path.relative_to(Path(__file__).parent.parent)} (hand-crafted)")
             skipped += 1
             continue
-        page_path.write_text(_page(code, meta))
+        page_path.write_text(_page(code, meta), encoding="utf-8")
         print(f"  wrote {page_path.relative_to(Path(__file__).parent.parent)}")
         wrote += 1
 
