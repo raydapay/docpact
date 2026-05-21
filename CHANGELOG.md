@@ -1,6 +1,20 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a4] — 2026-05-21
+
+### Added
+- **cli:** Add --show-files, --exit-non-zero-on-fix, --error-on-warning
+- Add DOC052 — require Examples section at configurable tier threshold
+
+
+### Fixed
+- Pre-PyPI review fixes — docs, coverage, invariants, perf
+- Use as_posix() for fnmatch path comparisons
+- Windows compatibility — path separators and line endings
+- Explicit utf-8 encoding in generate_rule_docs.py for Windows
+
+
 ## [0.1.0a3] — 2026-05-20
 
 ### Added
