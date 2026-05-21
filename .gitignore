@@ -41,7 +41,6 @@ Thumbs.db
 
 # uv
 .python-version
-uv.lock
 
 # Local performance baseline (machine-specific; update with make bench-update)
 .bench_baseline.json
