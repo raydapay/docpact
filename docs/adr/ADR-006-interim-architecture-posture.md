@@ -99,7 +99,7 @@ There is not even a single break-even number per project, so any hardcoded thres
 
 ### Neutral
 
-- **griffe removal from the default docstring parser** is a desired but unscheduled, standalone task, independent of this posture. Doing it does not require any decision here; not doing it does not block anything here. (A Rust rebuild would subsume it; staying Python makes it optional dependency-shedding with a reimplementation cost.)
+- **griffe removal from the default docstring parser** — *superseded by ADR-007 (2026-05-30): griffe stays; reimplementation is not justified.* Measurement showed docstring parsing is ~3% of runtime, so the removal had no performance basis and the dependency-hygiene benefit did not outweigh the cost/risk. The `DocstringParser` Protocol keeps the decision cheaply reversible. (Originally framed here as a desired-but-unscheduled task; that framing is withdrawn.)
 - The supporting separation principle is already an invariant, so adopting it formally costs nothing today.
 
 ## Revisit triggers

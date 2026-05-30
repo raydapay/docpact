@@ -17,6 +17,45 @@ No active milestone.
 
 ---
 
+## Performance baseline (2026-05-30)
+
+Measured on docpact's own `src/docpact` corpus. **Wall-time rots as the codebase
+grows — compare throughput (fn/s, lines/s), not raw milliseconds, and re-stamp the
+corpus size when re-measuring.** Machine: WSL2 Linux, 16 cores (fork-based).
+
+Corpus at measurement: **51 files, 6,800 physical lines, 164 functions.**
+
+| Run | Wall-time | Throughput |
+|---|--:|--:|
+| serial (`jobs=1`) | 247–253 ms | ~648 fn/s · ~27k lines/s |
+| parallel (`jobs=16`) | ~102 ms | ~1.6k fn/s (2.5×) |
+
+Where serial time goes (median of 15 runs, temporary instrumentation, not committed):
+
+| Stage | Share |
+|---|--:|
+| rules + dispatch + everything else | **68%** |
+| `extract_functions` (AST + FunctionInfo + byte-offset table) | 22% |
+| `parse_suppressions` (tokenize scan) | 8% |
+| docstring parse (griffe `Docstring` + `parse_google`) | **3%** |
+
+**Key finding — griffe docstring parsing is ~3% of runtime, NOT a hot path.** An
+earlier working assumption that griffe was "the heaviest per-function cost" was
+wrong; this measurement refutes it. Any griffe-removal or Rust-extension decision
+must therefore be justified on grounds *other than* docstring-parsing speed. The
+real hot paths are the rule loop (68%) and AST/FunctionInfo extraction (22%) — both
+already addressed by process parallelism (the 2.5× above), neither touched by
+docstring parsing. The cleanly-FFI-extractable component (the docstring state
+machine) is not the slow component; they do not coincide.
+
+**Decision (ADR-007, 2026-05-30):** keep griffe; do not reimplement docstring
+parsing (Python or Rust). At 3% of runtime the work has no perf basis and the
+dependency-hygiene benefit does not outweigh ~200 LOC + regression risk. Revisit
+only on a forced griffe 2.0 migration, griffe going unmaintained, or a profiler
+showing docstring parsing has become material. See ADR-007 for full why/why-not.
+
+---
+
 ## Recent changes (post-v0.3)
 
 ### tokenize-based suppression scanner — 2026-05-19
