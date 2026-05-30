@@ -82,20 +82,33 @@ repos:
 | DOC003 | Class missing a docstring | WARNING |
 | DOC007 | Args section doesn't match the function signature | ERROR |
 | DOC012 | Required section absent for the function's tier | ERROR |
-| DOC013 | Empty section not in canonical form | WARNING |
-| DOC014 | Suspicious parameter name (likely copy-paste) | WARNING |
+| DOC013 | Empty section not in canonical form (fixable) | WARNING |
+| DOC014 | Suspicious parameter name (likely typo of a real parameter) | WARNING |
+| DOC021 | `Defaults to X` prose doesn't match the signature default | WARNING |
+| DOC022 | Typed prose annotation doesn't match the signature type | WARNING |
 | DOC050 | Pydantic model field missing `Field(description=...)` | WARNING |
-| DOC051 | Constraints section duplicates Annotated metadata | ERROR (deferred — not yet active) |
+| DOC052 | `Examples` section absent (only when `require_examples_min_tier` is set; fixable) | ERROR |
 | DOC099 | `[FILL]` stub marker not replaced | ERROR |
-| MCP001 | Decorator `description=` and docstring `MCP:` section both present | ERROR |
+| MCP001 | Decorator `description=` and docstring `MCP:` section both present | WARNING |
+| TY001 | Returns section has content but the return annotation is `None` | ERROR |
+| TY002 | Returns section is `None.` but the return annotation is non-`None` | WARNING |
+| PARSE001 | File has a Python syntax error and cannot be parsed | ERROR |
 | FIX001 | Bare `# nodo` without codes or reason | WARNING |
 | FIX002 | Suppression names codes but has no `-- reason` | WARNING |
+| FIX003 | Suppression names a code with no active violation on that line | WARNING |
+| FIX004 | Suppression comment not on the `def` line (silently ignored) | WARNING |
+| REG001 | Tool-registry schema names a parameter absent from the signature | ERROR |
+| REG002 | Tool-registry entry names no function in the same file | OFF (opt-in) |
 
-The `DOC` and `MCP` namespaces are enabled by default. `FIX` rules enforce
-suppression hygiene and must be opted in:
+`DOC051` (Constraints duplicates Annotated metadata) is reserved but deferred — not
+yet active.
+
+The `DOC`, `MCP`, and `PARSE` namespaces are enabled by default. `FIX` (suppression
+hygiene), `TY` (type/docstring coherence), and `REG` (same-file tool-registry
+cross-checks) are opt-in:
 
 ```toml
-select = ["DOC", "MCP", "FIX"]
+select = ["DOC", "MCP", "PARSE", "FIX", "TY", "REG"]
 ```
 
 ---

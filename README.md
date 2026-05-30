@@ -45,19 +45,22 @@ docpact check src/ --format sarif     # SARIF 2.1.0 for GitHub Code Scanning
 docpact check src/ --format json      # machine-readable JSON
 docpact check src/ --add-suppression  # baseline: add # nodo: comments for all current violations
 docpact check src/ --config /path/to/pyproject.toml  # explicit config path (bypasses CWD discovery)
+docpact check src/ --jobs 0           # parallel analysis across all cores (0=auto, 1=serial default)
 docpact generate src/                 # insert stub docstrings for undocumented functions
 docpact list-rules                    # list all rules with severity and fixability
+docpact bench src/                    # measure serial vs parallel on your tree; recommends a jobs value
 ```
 
 ## What it checks
 
 | Namespace | Rules | What |
 |---|---|---|
-| `DOC` | DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC099 | Structural completeness: missing docstrings, missing sections, parameter mismatch, default drift, type/prose mismatch, Pydantic field descriptions, stale `[FILL]` markers |
+| `DOC` | DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099 | Structural completeness: missing docstrings, missing sections, parameter mismatch, default drift, type/prose mismatch, Pydantic field descriptions, required Examples (when configured), stale `[FILL]` markers |
 | `TY` | TY001–TY002 | Type/docstring coherence: `-> None` with substantive Returns prose; non-None return with empty Returns |
 | `MCP` | MCP001 | MCP-specific conflicts: decorator `description=` duplicates docstring `MCP:` section |
 | `FIX` | FIX001–FIX004 | Suppression hygiene: bare suppression comments, missing `-- reason`, stale suppressions, misplaced suppression comments |
 | `PARSE` | PARSE001 | Parse-time errors: file contains a Python syntax error and cannot be checked; fires before all other rules |
+| `REG` *(opt-in)* | REG001–REG002 | Tool-registry consistency: a same-file `ToolDefinition`/dict registry whose JSON-Schema parameter is absent from the function signature. Add `REG` to `select` to enable. |
 
 Full rule documentation: [`docs/rules/`](docs/rules/).
 
@@ -83,6 +86,8 @@ Most projects need no tier config. When automatic assignment doesn't fit — for
 ```
 
 Patterns are anchored to the directory containing `pyproject.toml`. `src/domain/mcp/tools/*.py` matches files relative to the project root, so it works regardless of where `docpact check` is invoked from.
+
+If the custom registry is a same-file `list[ToolDefinition]` (or list of `{"name", "description", "parameters"}` dicts), enabling the `REG` namespace is more precise than a glob: functions named by a registry entry are automatically held to a Tier 3 floor — only the registered functions, not every function in the file. See the `[tool.docpact.registry]` config below.
 
 ## Adopting in an existing codebase
 
@@ -114,9 +119,16 @@ schema = "1"
 format = "google"                # or "numpy"
 select = ["DOC", "MCP", "FIX", "TY"]
 suppress_comment = ["nodo"]      # inline suppression marker
+jobs = 1                         # parallel workers; 1 = serial (default), 0 = all cores
 
 [tool.docpact.per-file-ignores]
 "src/generated/*" = ["DOC"]
+
+# Opt-in: cross-check same-file tool registries (REG namespace). Add "REG" to select.
+[tool.docpact.registry]
+tool_definition_class = ["ToolDefinition"]   # constructor name(s); flat dict literals also recognized
+# assign_tier = true                         # registry membership → Tier 3 floor (default)
+# no_tier_floor = ["src/legacy/**"]          # files where the floor is not applied
 ```
 
 Inline suppression goes on the `def` keyword line:
@@ -176,9 +188,9 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 908 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 909 tests, 94% coverage.
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002.
 
 ## Documentation
 

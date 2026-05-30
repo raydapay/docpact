@@ -12,10 +12,10 @@ Copy this file to those names if needed; treat them as equivalent.
 
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050,
-DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001.
-DOC051 (Annotated constraint duplication) is deferred — conceptually sound,
-heuristic too coarse. See PROGRESS.md "Deferred with reasoning".
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
+DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002.
+DOC051 (Annotated constraint duplication) and DOC098 (doctest) are reserved/deferred.
+REG is opt-in (add `REG` to `select`). See PROGRESS.md for details.
 
 No active milestone. See PROGRESS.md for v0.3 scope and what shipped.
 
@@ -30,8 +30,12 @@ Key facts a fresh session needs:
 - `make verify` is the single quality gate. Run it before treating any change done.
 - Generated rule docs live in `docs/rules/`. `make verify` enforces they stay in sync
   with the registry via `docs-check` (`make docs` + `git status --short docs/rules/`).
-- File-level rules (DOC002, DOC003, DOC050, FIX001, FIX002) are wired directly in
-  `_run_checks` in `cli.py` and skipped in the function-level loop via a code skip set.
+- File-level rules (DOC002, DOC003, DOC050, FIX001, FIX002, FIX004 pre-pass;
+  FIX003, REG001, REG002, PARSE001 post-pass) are wired directly in `_run_checks` in
+  `cli.py` and skipped in the function-level loop via `_FILE_LEVEL_CODES`.
+- `jobs` config / `--jobs N` runs per-file analysis across worker processes (default
+  `1` = serial, `0` = auto). `docpact bench` measures serial vs parallel on the user's
+  tree. Per-file analysis was extracted to `_check_one_file` for this. See ADR-006 item 5.
 - `format = "numpy"` in `[tool.docpact]` selects `NumpyParser`; default is Google.
 - docpact's own config uses `select = ["DOC", "MCP", "FIX", "TY", "PARSE"]`.
 - `[tool.docpact.per-file-tier]` overrides tier per glob pattern (e.g. `"src/mcp/*.py" = 3`).

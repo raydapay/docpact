@@ -9,9 +9,10 @@ ships; do not put status in CLAUDE.md.
 
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050,
-DOC098–DOC099, MCP001, FIX001–FIX003, TY001–TY002, PARSE001. 774 tests, 94% coverage.
-DOC051 deferred (see "Deferred with reasoning" below).
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
+DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002.
+DOC051 (Annotated constraint dup) and DOC098 (doctest) reserved/deferred.
+REG is opt-in. (Run `docpact list-rules` for the authoritative current set.)
 
 No active milestone.
 
