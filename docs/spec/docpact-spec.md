@@ -1,6 +1,6 @@
 # docpact — Specification
 
-**Version:** 0.4.0  
+**Version:** 0.4.1  
 **Status:** Active — v0.1 complete, v0.2 complete, v0.3 complete  
 **Last revised:** 2026-05-30
 
@@ -157,9 +157,9 @@ This specification describes the complete system. Not all of it ships in v0.1. T
 - Structural mode (deterministic checks only)
 - Google and NumPy docstring parsers (`format = "google"` or `"numpy"`)
 - Tiers 1, 2, 3 (Tier 4 partial: explicit configuration only, no detection)
-- Rule namespaces with rules: `DOC`, `MCP`, `FIX`, `TY`, `PARSE`
+- Rule namespaces with rules: `DOC`, `MCP`, `FIX`, `TY`, `PARSE`, `REG`
 - Rule namespace allocated, no rules yet: `HEUR`
-- Commands: `check`, `check --fix`, `check --unsafe-fixes`, `generate`, `show-schema`, `list-rules`
+- Commands: `check`, `check --fix`, `check --unsafe-fixes`, `generate`, `bench`, `show-schema`, `list-rules`
 - Configuration via `pyproject.toml` and `docpact.toml`
 - Inline suppression via `# nodo: CODE -- reason` (configurable via `suppress_comment`)
 - Pre-commit integration
@@ -872,6 +872,11 @@ schema = "1"
 select = ["DOC", "MCP"]
 ignore = ["DOC013"]
 
+# Worker processes for per-file analysis. 1 = serial (default), 0 = all cores,
+# N = N workers. The serial/parallel break-even is project- and environment-
+# specific; run `docpact bench` to find it. See §16.
+jobs = 1
+
 # Files and directories to exclude.
 exclude = ["tests/", "migrations/", "**/_generated.py"]
 
@@ -1001,6 +1006,7 @@ Error codes with `[*]` suffix indicate a fix is available.
 docpact check    [OPTIONS] [FILES_OR_DIRS]...
 docpact semantic [OPTIONS] [FILES_OR_DIRS]...
 docpact generate [OPTIONS] [FILES_OR_DIRS]...
+docpact bench    [--runs N] [--jobs N] [FILES_OR_DIRS]...
 docpact show-schema [--tier {1,2,3,4}]
 docpact list-rules  [--format {text,json}]
 ```
@@ -1015,7 +1021,11 @@ docpact list-rules  [--format {text,json}]
   --format {text,json,sarif}  Output format. Default: text.
   --exit-zero                 Always exit 0.
   --diff                      Show diff of --fix output without applying.
+  --jobs N, -j N              Worker processes for analysis. 1 = serial (default),
+                              0 = all cores. Overrides the `jobs` config key.
 ```
+
+(Illustrative subset; see `docpact check --help` for the full option list.)
 
 ### `check` additions (future)
 
@@ -1040,6 +1050,22 @@ Runs LLM-based semantic analysis. Requires `docpact[semantic]` and configured cr
 ### `generate`
 
 Generates stub docstrings for undocumented functions using signature and decorator context to determine tier and required sections. Stubs contain `[FILL]` markers.
+
+### `bench`
+
+Measures `check` throughput on the given paths, serial vs. parallel, and prints a
+copy-pasteable `jobs` recommendation. The serial/parallel break-even depends on the
+user's project size, file complexity, core count, and OS (fork vs. spawn) — not on
+anything docpact can know in advance — so this measures it on the user's own tree
+rather than docpact applying a hardcoded threshold.
+
+```
+  --runs N      Timed runs per configuration. Default: 3.
+  --jobs N, -j  Worker count to benchmark against serial (0 = all cores).
+```
+
+Reports median wall-time and peak memory for each configuration. Peak memory uses
+`getrusage` (Unix only); on Windows it reports timings and shows memory as `—`.
 
 ### `show-schema`
 
