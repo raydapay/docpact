@@ -305,4 +305,4 @@ REG050 is reserved so it can ship under that code if one emerges.
 1. ADR-003 — Tier assignment by context (amended by item 5 of this decision)
 2. Spec §10.1 — tier assignment rules; §8 — no-imports invariant
 3. PROGRESS.md — "MCP-REG cluster — postponed" and "Deferred with reasoning" (DOC051)
-4. Originating request — Aluma PDR project, `ToolDefinition` registry detection
+4. Originating request — an adopter project, `ToolDefinition` registry detection

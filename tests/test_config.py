@@ -384,9 +384,9 @@ def test_file_tier_override_for_first_match_wins() -> None:
 
 def test_file_tier_override_anchored_to_root(tmp_path: Path) -> None:
     # The fix for issue #3: deep relative pattern matches without leading wildcard.
-    f = tmp_path / "src" / "recon_app" / "domain" / "search" / "mcp_tools.py"
+    f = tmp_path / "src" / "myapp" / "domain" / "search" / "mcp_tools.py"
     f.parent.mkdir(parents=True)
-    result = file_tier_override_for(f, {"src/recon_app/domain/*/mcp_tools.py": 3}, tmp_path)
+    result = file_tier_override_for(f, {"src/myapp/domain/*/mcp_tools.py": 3}, tmp_path)
     assert result == 3
 
 

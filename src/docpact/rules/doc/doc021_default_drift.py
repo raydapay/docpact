@@ -42,7 +42,7 @@ rather than ``"Defaults to SESSION_REGISTRY"``. Both are arguably correct;
 firing on one forces an arbitrary choice between naming the variable and
 describing it. Limiting the rule to literals eliminates all such ambiguous
 cases, reduces the false-positive rate substantially on real codebases
-(confirmed by recon-app dry-run), and keeps the rule actionable.
+(confirmed by an external dry-run), and keeps the rule actionable.
 
 ## FastAPI / wrapper defaults
 

@@ -29,6 +29,13 @@ footer = ""
 conventional_commits = true
 filter_unconventional = true
 split_commits = false
+# Scrub private project/client names from generated changelog entries. Commit
+# subjects in git history still contain these (history is not rewritten); this
+# only sanitizes the public CHANGELOG.md on regeneration.
+commit_preprocessors = [
+  { pattern = "(?i)recon-app|recon team|recon fixes", replace = "external dry-run" },
+  { pattern = "(?i)\\bAluma\\b", replace = "an adopter" },
+]
 commit_parsers = [
   { breaking = true, group = "Breaking Changes" },
   { message = "^feat", group = "Added" },

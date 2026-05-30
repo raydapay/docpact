@@ -80,7 +80,7 @@ Generated from conventional commits. Only `feat:` and `fix:` entries appear.
 - **output:** Color diagnostics + --color auto|always|never
 - --output-file writes output to a file instead of stdout
 - **DOC013:** Add safe fix — replace non-canonical body with 'None.'
-- Round-2 recon fixes — bool norm, per-file-tier DOC003, comma CLI
+- Round-2 external dry-run fixes — bool norm, per-file-tier DOC003, comma CLI
 - **DOC022:** Typed prose annotation mismatch
 - ConfigResult, --config flag, root-anchored glob matching
 - **rules:** Add PARSE001 — Python syntax error rule

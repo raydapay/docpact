@@ -48,11 +48,11 @@ already addressed by process parallelism (the 2.5× above), neither touched by
 docstring parsing. The cleanly-FFI-extractable component (the docstring state
 machine) is not the slow component; they do not coincide.
 
-**Decision (ADR-007, 2026-05-30):** keep griffe; do not reimplement docstring
+**Decision (ADR-006 item 6, 2026-05-30):** keep griffe; do not reimplement docstring
 parsing (Python or Rust). At 3% of runtime the work has no perf basis and the
 dependency-hygiene benefit does not outweigh ~200 LOC + regression risk. Revisit
 only on a forced griffe 2.0 migration, griffe going unmaintained, or a profiler
-showing docstring parsing has become material. See ADR-007 for full why/why-not.
+showing docstring parsing has become material. See ADR-006 for full why/why-not.
 
 ---
 
@@ -98,7 +98,7 @@ a structured diagnostic.
   returns `[]`) + CLI (text/JSON/SARIF, `--select PARSE`, `severity=off`,
   inline suppression).
 
-### recon-app dry-run response — 2026-05-19
+### External dry-run response — 2026-05-19
 
 Addressed 5 of 7 findings from external dry-run on a real FastAPI codebase.
 
@@ -150,7 +150,7 @@ changes from `int` to `float` but the prose isn't updated.
 default). Parser now propagates `p.annotation` from griffe through both Google
 and NumPy paths.
 
-### recon-app dry-run follow-up (round 2) — 2026-05-19
+### External dry-run follow-up (round 2) — 2026-05-19
 
 Addressed 3 follow-up findings after round-1 push.
 
@@ -438,7 +438,7 @@ plus a Tier 3 floor from registry membership). Cross-file registration — the
 imported-function pattern below — remains out of scope and still needs the
 module-graph decision. The original outline is kept for that cross-file case:
 
-The recon team proposed cross-file rules that validate MCP tool registration
+An adopter team proposed cross-file rules that validate MCP tool registration
 consistency: ToolSpec fields ↔ docstring Args, ToolSpec.description ↔ docstring
 summary, ToolSpec.schema ↔ Constraints section.
 
