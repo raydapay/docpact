@@ -151,3 +151,34 @@ def test_rule_config_is_frozen() -> None:
     cfg = RuleConfig(severity=Severity.ERROR, options={})
     with pytest.raises((AttributeError, TypeError)):
         cfg.severity = Severity.WARNING  # type: ignore[misc]
+
+
+def test_every_registered_rule_is_loaded() -> None:
+    """Every @register'd rule file must be imported by load_builtin_rules().
+
+    Guards against the DOC052 class of bug: a rule file declares a code via
+    @register but the import is forgotten in load_builtin_rules(), so the rule
+    is inert in real `docpact check` runs while its own tests (which import the
+    module directly) still pass.
+    """
+    import re
+    from pathlib import Path
+
+    import docpact.rules as rules_pkg
+
+    load_builtin_rules()
+    loaded = set(all_rules())
+
+    rules_dir = Path(rules_pkg.__file__).parent
+    declared: set[str] = set()
+    for f in rules_dir.rglob("*.py"):
+        text = f.read_text(encoding="utf-8")
+        if "@register" not in text:
+            continue
+        declared.update(re.findall(r'code="([A-Z]+[0-9]+)"', text))
+
+    missing = declared - loaded
+    assert not missing, (
+        f"Rule files declare codes that load_builtin_rules() does not import "
+        f"(inert in production): {sorted(missing)}"
+    )
