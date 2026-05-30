@@ -27,6 +27,7 @@ An **interim posture**, explicitly time-bounded by the revisit triggers below:
 1. **Language: stay Python.** No Rust rewrite now.
 2. **Scope: stay per-file.** No module graph, no cross-file resolution. The spec §8 invariant holds. **This is gated on ty maturity (item 4), NOT on Python free-threading** — see Rationale; conflating the two is a category error.
 3. **Cross-file capability: deferred entirely until ty.** No hand-rolled resolver. The griffe-backed opt-in "deep mode" (cross-file via griffe's static loader) is **deferred/rejected-for-now** — see Alternative C.
+   *(Superseded by ADR-009, 2026-05-30: cross-file is opened via a provider-agnostic LSP client — the stable interface was LSP, not a bespoke ty API. Items 1, 5, 6 below stand.)*
 4. **Strategic target: ty.** When ty formalizes a stable public plugin / semantic-model API, docpact's preferred cross-file path is to *consume* it, not to build resolution itself. This is the north star; it is "not yet," not "no."
 5. **Parallelism: implemented now, opt-in, default off.** Per-file independence makes parallel analysis sound today (issue #4). Shipped as a `jobs` setting (`--jobs` / `[tool.docpact] jobs`), default `1` (serial). The break-even between serial and parallel is a property of the *user's* project size, file complexity, core count, and OS (fork vs spawn) — **not** a property docpact can benchmark or threshold for them. So docpact ships a `docpact bench` command that measures wall-time and memory on the user's own tree and emits a copy-pasteable `jobs` recommendation. Measuring beats guessing. The dispatch is executor-abstracted so `ProcessPoolExecutor` → `ThreadPoolExecutor` is a one-line swap when free-threading lands.
 6. **Docstring parsing: keep griffe; do not reimplement.** griffe stays the Google/NumPy section parser. It is one of three runtime deps, isolated to one file behind the `DocstringParser` Protocol, but we use only ~6% of its surface, via an `_internal` import, pinned `<2.0`. The reimplementation question (pure-Python, or a Rust state machine for the indentation block-reader) was settled by measurement: docstring parsing is **~3% of runtime** (PROGRESS.md "Performance baseline"; hot paths are the rule loop at 68% and AST extraction at 22%). With no perf basis, reimplementation isn't worth ~200 LOC + regression risk on a hardened parser; a Rust extension is a clearly bad trade (optimizes 3% at the cost of the full compiled-wheel distribution apparatus — and the cleanly-FFI-extractable component is *not* the slow one). Kept behind the Protocol, so it's cheaply reversible.
@@ -113,6 +114,12 @@ There is not even a single break-even number per project, so any hardcoded thres
 6. **The griffe `<2.0` pin forces a migration, griffe goes unmaintained, or a profiler shows docstring parsing has become a material share of runtime.** Then reopen the keep-vs-reimplement question (item 6) — at that point the reimplementation's relative cost has changed.
 
 ## Projected ty-integration use case (logged demand, 2026-05-30)
+
+> **Superseded by ADR-009 (2026-05-30):** trigger 1 fired sooner than expected — the
+> stable interface turned out to be **LSP**, not a bespoke ty API, and a spike proved
+> `textDocument/definition` resolves the imported-model pattern (incl. re-export
+> chains). Cross-file is now opened via a provider-agnostic LSP client. This section
+> is kept as the use case that motivated it.
 
 Recorded so that when trigger 1 fires, the first cross-file capability to scope is
 concrete, not abstract. From an adopter request (FR-1/FR-2):
