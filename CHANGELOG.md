@@ -1,6 +1,12 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a6] — 2026-05-30
+
+### Fixed
+- **release:** Relock uv.lock on version bump
+
+
 ## [0.1.0a5] — 2026-05-30
 
 ### Added
