@@ -77,6 +77,23 @@ class SemanticConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class LspConfig:
+    """Configuration for the cross-file LSP client (ADR-009).
+
+    Drives the opt-in cross-file resolution layer. ``server`` is the language
+    server command and its arguments (defaulting to ty); any LSP-conformant
+    server is a drop-in swap. ``timeout`` bounds each request and the definition
+    readiness retry. Off until cross-file analysis is invoked — never touched by
+    the default `check`.
+
+    Stability: beta
+    """
+
+    server: tuple[str, ...] = ("ty", "server")
+    timeout: float = 15.0
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     """Resolved configuration.
 
@@ -101,6 +118,7 @@ class Config:
     registry: RegistryConfig = field(default_factory=RegistryConfig)
     jobs: int = 1  # parallel worker processes; 1 = serial (default), 0 = auto (all cores)
     semantic: SemanticConfig = field(default_factory=SemanticConfig)
+    lsp: LspConfig = field(default_factory=LspConfig)
 
 
 _SEVERITY_MAP: dict[str, Severity] = {
@@ -231,6 +249,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
 
     registry = _parse_registry(raw["registry"]) if "registry" in raw else RegistryConfig()
     semantic = _parse_semantic(raw["semantic"]) if "semantic" in raw else SemanticConfig()
+    lsp = _parse_lsp(raw["lsp"]) if "lsp" in raw else LspConfig()
 
     jobs: int = 1
     if "jobs" in raw:
@@ -257,6 +276,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
         registry=registry,
         jobs=jobs,
         semantic=semantic,
+        lsp=lsp,
     )
 
 
@@ -297,6 +317,42 @@ def _parse_semantic(raw: object) -> SemanticConfig:
         api_key_env=_str("api_key_env", defaults.api_key_env),
         min_tier=min_tier,
     )
+
+
+def _parse_lsp(raw: object) -> LspConfig:
+    """Build an LspConfig from a raw [tool.docpact.lsp] mapping.
+
+    Args:
+        raw: The value of the ``lsp`` key — expected to be a table.
+
+    Returns:
+        The resolved LspConfig, with defaults applied for absent keys.
+
+    Raises:
+        ConfigError: ``raw`` is not a table, or a key has the wrong type
+            (``server`` not a non-empty list of strings, ``timeout`` not a
+            positive number).
+    """
+    if not isinstance(raw, dict):
+        raise ConfigError("lsp: expected a table")
+    data: dict[str, object] = {str(k): v for k, v in raw.items()}
+    defaults = LspConfig()
+
+    server = defaults.server
+    if "server" in data:
+        server = _parse_string_list(data["server"], "lsp.server")
+        if not server:
+            raise ConfigError("lsp.server: must contain at least one command token")
+
+    timeout = defaults.timeout
+    if "timeout" in data:
+        v = data["timeout"]
+        # bool is an int subclass; reject it explicitly so timeout = true is an error.
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0:
+            raise ConfigError("lsp.timeout: must be a positive number")
+        timeout = float(v)
+
+    return LspConfig(server=server, timeout=timeout)
 
 
 def _parse_registry(raw: object) -> RegistryConfig:
