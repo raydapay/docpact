@@ -172,9 +172,9 @@ Track progress on [#7](https://github.com/raydapay/docpact/issues/7).
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 837 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 896 tests, 95% coverage.
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002.
 
 ## Documentation
 
