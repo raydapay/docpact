@@ -165,10 +165,14 @@ It does not replace ruff or ty. It does not import the code it analyzes. It does
 
 ## Platform support
 
-Tested on Linux and macOS. Windows is not covered by CI. The core analysis path
-works, but `per-file-tier` and `per-file-ignores` glob patterns use `/` as separator
-and will silently fail to match on Windows where `str(Path(...))` produces `\` paths.
-Track progress on [#7](https://github.com/raydapay/docpact/issues/7).
+CI runs on **Linux** (Python 3.11, 3.12, 3.13) and **Windows** (Python 3.11);
+both run the full non-mutating gate (lint, types, tests, coverage, dogfood).
+**macOS** is developed and tested locally but is not in CI. Glob patterns
+(`per-file-tier`, `per-file-ignores`, `exclude`) are normalized with `as_posix()`,
+so `/`-separated patterns match correctly on Windows.
+
+One platform caveat: `docpact bench` reports peak memory via `getrusage`, which is
+Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
