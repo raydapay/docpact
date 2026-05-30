@@ -78,8 +78,9 @@ release:
 	@git diff --quiet && git diff --cached --quiet || (echo "error: working tree is not clean"; exit 1)
 	$(MAKE) verify
 	uvx bump-my-version bump --new-version $(VERSION) --no-commit --no-tag --allow-dirty
+	uv lock   # sync uv.lock's docpact version; else verify-ci's git-diff guard fails post-release
 	uvx git-cliff --tag v$(VERSION) --output CHANGELOG.md
-	git add pyproject.toml README.md docs/spec/docpact-spec.md CHANGELOG.md
+	git add pyproject.toml README.md docs/spec/docpact-spec.md CHANGELOG.md uv.lock
 	git commit -m "chore: release v$(VERSION)"
 	git tag -a "v$(VERSION)" -m "v$(VERSION)"
 	@echo ""
