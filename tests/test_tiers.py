@@ -324,3 +324,63 @@ def test_all_names_empty_set_makes_all_module_fns_tier1() -> None:
     # Module defines __all__ = [] — everything is private.
     fn = _fn("public_fn")
     assert assign_tier(fn, all_names=frozenset()) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tier 3 floor from tool-registry membership (ADR-005)
+# ---------------------------------------------------------------------------
+
+
+def test_registry_membership_floors_to_tier3() -> None:
+    # A plain public function (would be Tier 2) registered as a tool → Tier 3.
+    fn = _fn("search")
+    assert assign_tier(fn, registered_tool_names=frozenset({"search"})) == 3
+
+
+def test_registry_floor_overrides_per_file_tier_1() -> None:
+    # per-file-tier=1 cannot lower a registered tool below the floor.
+    fn = _fn("search", file_path=Path("/project/src/tools.py"))
+    tier = assign_tier(
+        fn,
+        tier_overrides={"src/tools.py": 1},
+        registered_tool_names=frozenset({"search"}),
+    )
+    assert tier == 3
+
+
+def test_registry_floor_allows_raise_to_tier4() -> None:
+    # The floor is a minimum, not a cap: per-file-tier=4 still wins.
+    fn = _fn("search", file_path=Path("/project/src/routes.py"))
+    tier = assign_tier(
+        fn,
+        tier_overrides={"src/routes.py": 4},
+        registered_tool_names=frozenset({"search"}),
+    )
+    assert tier == 4
+
+
+def test_registry_floor_only_module_level() -> None:
+    # A method that happens to share a registered name is not floored.
+    fn = _fn("search", containing_class="Tools")
+    assert assign_tier(fn, registered_tool_names=frozenset({"search"})) == 2
+
+
+def test_registry_floor_not_applied_to_unregistered() -> None:
+    fn = _fn("helper")
+    assert assign_tier(fn, registered_tool_names=frozenset({"search"})) == 2
+
+
+def test_registry_none_means_no_floor() -> None:
+    fn = _fn("search")
+    assert assign_tier(fn, registered_tool_names=None) == 2
+
+
+def test_registry_floor_does_not_lower_tier4_function() -> None:
+    # max(3, 4) == 4 — a registered name on a Tier-4 file is unchanged.
+    fn = _fn("search", file_path=Path("/project/src/routes.py"))
+    tier = assign_tier(
+        fn,
+        tier_overrides={"src/routes.py": 4},
+        registered_tool_names=frozenset({"search"}),
+    )
+    assert tier == 4

@@ -45,11 +45,13 @@ def assign_tier(
     tier_overrides: dict[str, int] | None = None,
     *,
     all_names: frozenset[str] | None = None,
+    registered_tool_names: frozenset[str] | None = None,
     root: Path | None = None,
 ) -> int:
     """Determine the tier of a function.
 
-    Rules are evaluated in order; the first match wins (spec §10.1).
+    Rules are evaluated in order; the first match wins (spec §10.1). A Tier 3
+    floor from tool-registry membership is then applied on top of the result.
 
     Args:
         func: The function metadata.
@@ -60,6 +62,11 @@ def assign_tier(
             None if the module does not define __all__. When provided, this
             is the authoritative visibility contract for module-level functions
             (not for methods, which are accessed through their class).
+        registered_tool_names: Names of module-level functions registered as
+            tools by a same-file registry entry (ADR-005). A module-level
+            function in this set is held to a Tier 3 floor: its tier becomes
+            ``max(3, t)``. The caller is responsible for omitting names where
+            the floor is disabled (``assign_tier = false`` or ``no_tier_floor``).
         root: Project root directory used to anchor glob patterns. When
             provided, patterns are matched against the path relative to root
             before falling back to absolute-path matching.
@@ -73,6 +80,27 @@ def assign_tier(
 
     Stability: stable
     """
+    base = _assign_base_tier(func, tier_overrides, all_names=all_names, root=root)
+    # Tier 3 floor from tool-registry membership. A registry entry is the
+    # data-structure equivalent of @mcp.tool; the floor is a minimum, not a
+    # fixed value, so a per-file-tier=4 can still raise above it (ADR-005).
+    if (
+        registered_tool_names is not None
+        and func.containing_class is None
+        and func.name in registered_tool_names
+    ):
+        return max(3, base)
+    return base
+
+
+def _assign_base_tier(
+    func: FunctionInfo,
+    tier_overrides: dict[str, int] | None,
+    *,
+    all_names: frozenset[str] | None,
+    root: Path | None,
+) -> int:
+    """Assign a tier from the ordered context rules, before any registry floor."""
     # Rule 1: MCP decorators → Tier 3.
     if any(d.name in MCP_DECORATORS for d in func.decorators):
         return 3
