@@ -139,6 +139,15 @@ not worth a fixture file.
 Configuration, tier assignment, and rule output are all deterministic. A result
 that depends on file ordering, environment variables, or wall-clock time is a bug.
 
+### Measure before optimizing, refactoring, or reimplementing
+
+A performance claim — "X is the bottleneck," "this is slow," "the dependency costs
+us" — is a *hypothesis* until measured. Before committing to work justified by speed
+(optimizing a path, refactoring for performance, reimplementing or dropping a
+dependency), profile it and confirm the bottleneck is where you think. Temporary
+instrumentation is cheap; reimplementing the wrong 3% is not. If a plan's success
+criterion is a perf win, the measurement comes *before* the plan, not after.
+
 ### No imports of analyzed code
 
 docpact must never `import` the code it analyzes. All analysis is static via AST.
@@ -391,7 +400,12 @@ issue immediately and acknowledge in one sentence without breaking flow.
 - ADRs are numbered sequentially. Numbers are never reused.
 - Use `docs/adr/template.md` as the starting point.
 - Status: `Proposed → Accepted → (eventually) Superseded by ADR-NNN`.
-- Accepted ADRs are not edited in place. Material changes need a new ADR.
+- **An ADR earns permanence by shaping code.** An accepted ADR that drove real
+  code changes is not edited in place — a material change gets a new (superseding)
+  ADR, so the code's rationale stays traceable. But an ADR that shaped *no* code (a
+  posture/direction decision) may be revised in place when it changes; spawning a
+  second ADR just to record "desired, then reversed" is reader/token overhead with
+  no traceability value. Fold the new conclusion into the original instead.
 
 When in doubt about whether to write one, ask Ray.
 
