@@ -64,6 +64,11 @@ from docpact.rules.fix.fix004_misplaced_suppression import check_misplaced_suppr
 from docpact.rules.parse.parse001_syntax_error import check_syntax_error as check_parse_syntax_error
 from docpact.rules.reg.reg001_schema_phantom_param import check_registry_phantom_params
 from docpact.rules.reg.reg002_unmatched_entry import check_unmatched_entries
+from docpact.semantic.analyzer import SYSTEM as _SEM_SYSTEM
+from docpact.semantic.analyzer import analyze as _sem_analyze
+from docpact.semantic.analyzer import build_batches as _sem_build_batches
+from docpact.semantic.analyzer import user_prompt as _sem_user_prompt
+from docpact.semantic.backend import SemanticError, make_backend
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
 
@@ -1100,6 +1105,100 @@ def bench(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             f"Recommendation: keep serial (jobs = 1). Parallel was only {speedup:.2f}x here — "
             "the process-startup overhead isn't worth it for this tree."
         )
+
+
+def _collect_semantic_functions(
+    py_files: list[Path], config: Config, root: Path, min_tier: int
+) -> list[FunctionInfo]:
+    """Collect functions at or above min_tier across the given files, in order."""
+    out: list[FunctionInfo] = []
+    for file_path in py_files:
+        source_text = file_path.read_text(encoding="utf-8", errors="replace")
+        all_names = parse_all_names(source_text)
+        try:
+            functions = extract_functions(file_path)
+        except SyntaxError:
+            continue
+        for fn in functions:
+            if fn.docstring_raw is None:
+                continue
+            if assign_tier(fn, config.tier_overrides, all_names=all_names, root=root) >= min_tier:
+                out.append(fn)
+    return out
+
+
+@main.command()
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option(
+    "--min-tier",
+    type=click.IntRange(1, 4),
+    default=None,
+    help="Scope to this tier and above; default from config (3).",
+)
+@click.option("--dry-run", is_flag=True, help="Print the prompts that would be sent; no API call.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format.",
+)
+@click.option("--exit-zero", is_flag=True, help="Exit 0 even when findings are reported.")
+def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --help text
+    paths: tuple[str, ...],
+    min_tier: int | None,
+    dry_run: bool,
+    output_format: str,
+    exit_zero: bool,
+) -> None:
+    """LLM-backed semantic docstring analysis (advisory, opt-in).
+
+    Judges docstring *meaning* — cargo-cult restatement, an unsurfaced
+    precondition/constraint, an empty Returns — which the deterministic `check`
+    rules cannot. Non-deterministic and advisory; configure
+    `[tool.docpact.semantic]` (backend, model, api_base, api_key_env). Use
+    --dry-run to inspect prompts without an API call or sending any code.
+    """
+    cfg_result = load_config(Path.cwd())
+    config, root = cfg_result.config, cfg_result.root
+    scope = min_tier if min_tier is not None else config.semantic.min_tier
+
+    py_files = _collect_py_files(paths, config, root)
+    functions = _collect_semantic_functions(py_files, config, root, scope)
+    if not functions:
+        click.echo(f"No functions in scope (tier >= {scope}).")
+        return
+
+    if dry_run:
+        batches = _sem_build_batches(functions)
+        click.echo(f"{len(functions)} functions → {len(batches)} request(s)\n")
+        click.echo(f"=== SYSTEM ===\n{_SEM_SYSTEM}\n")
+        for i, batch in enumerate(batches, 1):
+            click.echo(f"=== REQUEST {i}/{len(batches)} ({len(batch)} functions) ===")
+            click.echo(_sem_user_prompt(batch))
+            click.echo("")
+        click.echo("Dry run — no API call, no code sent.")
+        return
+
+    severity = config.rule_severities.get("SEM001", Severity.WARNING)
+    try:
+        backend = make_backend(config.semantic)
+        report = _sem_analyze(functions, backend, severity=severity)
+    except SemanticError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    if output_format == "json":
+        click.echo(format_json(report.results, Path.cwd()))
+    else:
+        if report.results:
+            click.echo(format_text(report.results, Path.cwd()))
+        click.echo(
+            f"Reviewed {report.functions_reviewed} function(s) in {report.requests} request(s); "
+            f"{len(report.results)} finding(s). [advisory — non-deterministic]"
+        )
+
+    if report.results and not exit_zero:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

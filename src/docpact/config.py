@@ -58,6 +58,25 @@ class RegistryConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SemanticConfig:
+    """Configuration for the semantic layer (SEM namespace; ADR-008).
+
+    Drives `docpact semantic`. ``backend`` selects the LLM adapter; the rest
+    configure the chosen adapter. ``min_tier`` scopes analysis to agent-facing
+    functions. Off until a backend/model is configured and `docpact semantic`
+    is invoked — never touched by `check`.
+
+    Stability: beta
+    """
+
+    backend: str = "openai-compat"
+    model: str = ""
+    api_base: str | None = None
+    api_key_env: str = "OPENAI_API_KEY"
+    min_tier: int = 3
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     """Resolved configuration.
 
@@ -81,6 +100,7 @@ class Config:
     require_examples_min_tier: int | None = None
     registry: RegistryConfig = field(default_factory=RegistryConfig)
     jobs: int = 1  # parallel worker processes; 1 = serial (default), 0 = auto (all cores)
+    semantic: SemanticConfig = field(default_factory=SemanticConfig)
 
 
 _SEVERITY_MAP: dict[str, Severity] = {
@@ -210,6 +230,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
         require_examples_min_tier = v
 
     registry = _parse_registry(raw["registry"]) if "registry" in raw else RegistryConfig()
+    semantic = _parse_semantic(raw["semantic"]) if "semantic" in raw else SemanticConfig()
 
     jobs: int = 1
     if "jobs" in raw:
@@ -235,6 +256,46 @@ def _parse_section(raw: dict[str, object]) -> Config:
         require_examples_min_tier=require_examples_min_tier,
         registry=registry,
         jobs=jobs,
+        semantic=semantic,
+    )
+
+
+def _parse_semantic(raw: object) -> SemanticConfig:
+    """Build a SemanticConfig from a raw [tool.docpact.semantic] mapping."""
+    if not isinstance(raw, dict):
+        raise ConfigError("semantic: expected a table")
+    data: dict[str, object] = {str(k): v for k, v in raw.items()}
+    defaults = SemanticConfig()
+
+    def _str(key: str, default: str) -> str:
+        """Return a required-string field's value, or its default if absent."""
+        if key not in data:
+            return default
+        v = data[key]
+        if not isinstance(v, str):
+            raise ConfigError(f"semantic.{key}: expected a string")
+        return v
+
+    api_base = defaults.api_base
+    if "api_base" in data:
+        v = data["api_base"]
+        if not isinstance(v, str):
+            raise ConfigError("semantic.api_base: expected a string")
+        api_base = v
+
+    min_tier = defaults.min_tier
+    if "min_tier" in data:
+        v = data["min_tier"]
+        if isinstance(v, bool) or not isinstance(v, int) or v not in (1, 2, 3, 4):
+            raise ConfigError("semantic.min_tier: must be an integer 1-4")
+        min_tier = v
+
+    return SemanticConfig(
+        backend=_str("backend", defaults.backend),
+        model=_str("model", defaults.model),
+        api_base=api_base,
+        api_key_env=_str("api_key_env", defaults.api_key_env),
+        min_tier=min_tier,
     )
 
 

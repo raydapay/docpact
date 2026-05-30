@@ -1,0 +1,206 @@
+"""Semantic docstring analysis: build prompts, call a backend, parse findings.
+
+Backend-agnostic. Given a list of FunctionInfo (already tier-scoped by the
+caller) and an LLMBackend, it renders each function as signature + docstring,
+batches them within a token budget, asks the model for per-function verdicts,
+and converts weak/empty verdicts into SEM001 RuleResults reusing the existing
+diagnostic model and output formatters.
+
+The check it asks for is the one the spike validated: does the docstring add
+anything beyond the signature (cargo-cult), is a precondition/constraint/side
+effect implied but not surfaced (hidden contract), does Returns only restate
+the type (empty-returns).
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from docpact.model.diagnostic import RuleResult, Severity, SourceLocation
+
+if TYPE_CHECKING:
+    from docpact.model.function_info import FunctionInfo
+    from docpact.semantic.backend import LLMBackend
+
+SYSTEM = (
+    "You review Python docstrings for an agent-facing API. A docstring is GOOD only "
+    "if it tells a caller something the signature and type annotations do NOT already "
+    "convey: preconditions, side effects, invariants, what the return value means, "
+    "what raises. Flag three failure modes: "
+    "(1) cargo-cult — a field/return description that merely restates the name or type "
+    "(e.g. 'user_id: The user id'); "
+    "(2) hidden contract — a precondition, constraint, bound, or side effect implied by "
+    "the code/types but absent from the prose; "
+    "(3) empty-returns — a Returns that only restates the return type. "
+    "Be strict but fair: a terse docstring that genuinely adds signal is GOOD. "
+    'Respond ONLY with JSON: {"findings":[{"name":str,"verdict":"good|weak|empty",'
+    '"issues":[str,...]}]}. For any weak/empty verdict, "issues" MUST be non-empty and '
+    "name the specific missing information; for good, issues is empty."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticReport:
+    """Outcome of a semantic run.
+
+    Stability: beta
+    """
+
+    results: list[RuleResult]
+    functions_reviewed: int
+    requests: int
+
+
+def _signature(func: FunctionInfo) -> str:
+    """Render a compact ``def name(params) -> ret:`` line from a FunctionInfo."""
+    parts: list[str] = []
+    for p in func.parameters:
+        if p.kind == "bound":
+            parts.append(p.name)
+            continue
+        s = p.name
+        if p.annotation:
+            s += f": {p.annotation}"
+        if p.default is not None:
+            s += f" = {p.default}"
+        parts.append(s)
+    ret = f" -> {func.return_annotation}" if func.return_annotation else ""
+    return f"def {func.name}({', '.join(parts)}){ret}:"
+
+
+def render_function(func: FunctionInfo) -> str:
+    """Render one function as signature + docstring text for the prompt.
+
+    Args:
+        func: The function to render.
+
+    Returns:
+        A compact ``def ...:`` line followed by the triple-quoted docstring.
+
+    Stability: beta
+    """
+    doc = (func.docstring_raw or "").strip()
+    return f'{_signature(func)}\n    """{doc}"""'
+
+
+def build_batches(
+    functions: list[FunctionInfo], *, batch_chars: int = 24000
+) -> list[list[FunctionInfo]]:
+    """Group functions into batches under a per-request character budget.
+
+    Args:
+        functions: Functions to review, in source order.
+        batch_chars: Approximate per-request character budget (~6k tokens at
+            8k-token endpoints, leaving headroom for system prompt and output).
+
+    Returns:
+        A list of batches, each a list of FunctionInfo whose rendered size fits
+        the budget. A single oversized function still gets its own batch.
+
+    Stability: beta
+    """
+    batches: list[list[FunctionInfo]] = []
+    cur: list[FunctionInfo] = []
+    size = 0
+    for fn in functions:
+        rendered = len(render_function(fn))
+        if cur and size + rendered > batch_chars:
+            batches.append(cur)
+            cur, size = [], 0
+        cur.append(fn)
+        size += rendered
+    if cur:
+        batches.append(cur)
+    return batches
+
+
+def user_prompt(batch: list[FunctionInfo]) -> str:
+    """Build the user message enumerating a batch of functions to review.
+
+    Args:
+        batch: The functions in this request.
+
+    Returns:
+        A single user-message string.
+
+    Stability: beta
+    """
+    body = "\n\n---\n\n".join(render_function(fn) for fn in batch)
+    return f"Review these {len(batch)} functions. Return JSON only.\n\n{body}"
+
+
+def _extract_json(content: str) -> dict:
+    """Parse a model reply as JSON, tolerating markdown fences or surrounding prose."""
+    content = content.strip()
+    if content.startswith("```"):
+        content = content.strip("`").lstrip("json").strip()
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        start, end = content.find("{"), content.rfind("}")
+        if start != -1 and end > start:
+            return json.loads(content[start : end + 1])
+        raise
+
+
+def analyze(
+    functions: list[FunctionInfo],
+    backend: LLMBackend,
+    *,
+    severity: Severity = Severity.WARNING,
+) -> SemanticReport:
+    """Run semantic analysis over tier-scoped functions and return SEM001 findings.
+
+    Args:
+        functions: Functions to review (the caller scopes these by tier).
+        backend: The LLM backend to call.
+        severity: Severity to attach to emitted SEM001 results.
+
+    Returns:
+        A SemanticReport with one SEM001 RuleResult per weak/empty verdict
+        (good verdicts produce nothing), plus the counts of functions reviewed
+        and requests made.
+
+    Raises:
+        SemanticError: A backend call failed (propagated from the backend).
+
+    Constraints:
+        Non-deterministic: results may vary across model versions. Advisory
+        only — never used to gate `check`. A batch whose reply cannot be parsed
+        as JSON is skipped (no findings) rather than aborting the run.
+
+    Stability: beta
+    """
+    by_name: dict[str, FunctionInfo] = {}
+    for fn in functions:
+        by_name.setdefault(fn.name, fn)
+
+    results: list[RuleResult] = []
+    batches = build_batches(functions)
+    for batch in batches:
+        reply = backend.complete(SYSTEM, user_prompt(batch))
+        try:
+            parsed = _extract_json(reply)
+        except json.JSONDecodeError:
+            continue  # advisory: skip an unparseable batch rather than fail
+        for finding in parsed.get("findings", []):
+            verdict = finding.get("verdict")
+            if verdict not in ("weak", "empty"):
+                continue
+            fn = by_name.get(finding.get("name", ""))
+            if fn is None:
+                continue
+            issues = "; ".join(finding.get("issues", [])) or "weak docstring"
+            results.append(
+                RuleResult(
+                    code="SEM001",
+                    severity=severity,
+                    message=f"{verdict}: {issues}",
+                    location=SourceLocation(file_path=fn.file_path, line=fn.line, column=fn.column),
+                )
+            )
+
+    results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
+    return SemanticReport(results=results, functions_reviewed=len(functions), requests=len(batches))
