@@ -975,13 +975,14 @@ def list_rules(  # nodo: DOC012 -- click params; Args section would duplicate --
 def _peak_rss_mb(children: bool) -> float | None:
     """Return the high-water resident set size in MB, or None if unmeasurable.
 
-    Reads getrusage (Unix only; returns None on platforms without `resource`,
-    e.g. Windows). ru_maxrss is kilobytes on Linux and bytes on macOS.
+    Uses getrusage, which is Unix-only. Returns None on Windows. The sys.platform
+    guard also lets the type checker exclude the Unix-only `resource` members from
+    Windows analysis. ru_maxrss is kilobytes on Linux and bytes on macOS.
     """
-    try:
-        import resource
-    except ImportError:
+    if sys.platform == "win32":
         return None
+    import resource
+
     who = resource.RUSAGE_CHILDREN if children else resource.RUSAGE_SELF
     raw = resource.getrusage(who).ru_maxrss
     return raw / (1024 * 1024) if sys.platform == "darwin" else raw / 1024
