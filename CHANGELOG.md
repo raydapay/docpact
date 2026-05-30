@@ -1,6 +1,19 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a5] — 2026-05-30
+
+### Added
+- **parser:** Extract same-file tool-registry entries
+- **rules:** Add REG001/REG002 tool-registry consistency rules
+- **tiers:** Apply Tier 3 floor from tool-registry membership
+- **cli:** Wire tool-registry detection and registry config
+
+
+### Fixed
+- Drop unused ty:ignore directive in DOC052
+
+
 ## [0.1.0a4] — 2026-05-21
 
 ### Added
