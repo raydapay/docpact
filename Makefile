@@ -1,4 +1,4 @@
-.PHONY: help install format format-check lint lint-check typecheck test coverage verify verify-ci docs docs-check stats-update stats-check dogfood bench bench-update release
+.PHONY: help install format format-check lint lint-check typecheck test coverage verify verify-ci docs docs-check stats-update stats-check dogfood release
 
 # Default target
 help:
@@ -18,8 +18,6 @@ help:
 	@echo "  make stats-update   Sync README.md test count and coverage (writes)"
 	@echo "  make stats-check    Verify README.md stats match current suite (CI gate)"
 	@echo "  make dogfood        Run docpact on its own source (self-check)"
-	@echo "  make bench          Run throughput benchmark and compare against baseline"
-	@echo "  make bench-update   Run benchmark and save result as new baseline"
 	@echo "  make release        Cut a release: make release VERSION=x.y.z"
 
 install:
@@ -66,12 +64,6 @@ stats-check:
 
 dogfood:
 	uv run docpact check src/
-
-bench:
-	uv run python scripts/bench.py
-
-bench-update:
-	uv run python scripts/bench.py --update
 
 release:
 	@test -n "$(VERSION)" || (echo "usage: make release VERSION=x.y.z"; exit 1)

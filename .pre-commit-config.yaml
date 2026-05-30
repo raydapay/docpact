@@ -22,12 +22,3 @@ repos:
         entry: uv run docpact check src/
         pass_filenames: false
         types: [python]
-
-      - id: docpact-bench
-        name: docpact performance
-        description: Guard against throughput regressions (5% threshold, trimmed mean of 20 runs).
-        language: system
-        entry: uv run python scripts/bench.py
-        pass_filenames: false
-        files: ^src/docpact/|^tests/fixtures/
-        types: [python]

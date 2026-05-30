@@ -276,8 +276,6 @@ make test          # pytest (fast, no coverage overhead)
 make coverage      # pytest + coverage report (fail_under=85)
 make docs          # regenerate docs/rules/*.md from registry
 make dogfood       # docpact check src/ (self-check)
-make bench         # throughput benchmark vs. local baseline (5% regression threshold)
-make bench-update  # save current result as new baseline after intentional changes
 
 # Focused test runs
 uv run pytest tests/test_rules/      # rule tests only
