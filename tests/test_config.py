@@ -438,6 +438,7 @@ def test_registry_defaults_when_absent(tmp_path: Path) -> None:
     assert cfg.registry.name_field == "name"
     assert cfg.registry.description_field == "description"
     assert cfg.registry.parameters_field == "parameters"
+    assert cfg.registry.input_model_field == "input_model"
     assert cfg.registry.assign_tier is True
     assert cfg.registry.no_tier_floor == ()
 
@@ -451,6 +452,7 @@ def test_registry_full_override(tmp_path: Path) -> None:
         'name_field = "fn_name"\n'
         'description_field = "desc"\n'
         'parameters_field = "schema"\n'
+        'input_model_field = "schema_model"\n'
         "assign_tier = false\n"
         'no_tier_floor = ["src/legacy/**"]\n'
     )
@@ -459,6 +461,7 @@ def test_registry_full_override(tmp_path: Path) -> None:
     assert reg.name_field == "fn_name"
     assert reg.description_field == "desc"
     assert reg.parameters_field == "schema"
+    assert reg.input_model_field == "schema_model"
     assert reg.assign_tier is False
     assert reg.no_tier_floor == ("src/legacy/**",)
 

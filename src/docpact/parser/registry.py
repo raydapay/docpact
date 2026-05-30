@@ -16,13 +16,40 @@ Literals-only, like DOC021: an entry whose ``name`` is not a string literal is
 not produced at all (it cannot be correlated); an entry whose ``parameters``
 is not a static dict literal yields ``property_keys = None`` so the REG001
 cross-check is skipped rather than guessed.
+
+Two further facts are captured for the opt-in cross-file pass (ADR-009), and
+only when statically present: the ``input_model`` reference (a bare ``Name``,
+with its source position, so LSP go-to-definition can resolve the model's
+defining file) and the ``Args:`` keys of the entry's description string (parsed
+by a supplied docstring parser). Both are absent (None) otherwise, so same-file
+REG behaviour is unchanged.
 """
 
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from docpact.model.tool_registry import ToolRegistryEntry
+from docpact.model.tool_registry import ModelRef, ToolRegistryEntry
+
+if TYPE_CHECKING:
+    from docpact.parser.docstring import DocstringParser
+
+
+@dataclass(frozen=True, slots=True)
+class _Fields:
+    """The configured field names plus the optional description parser.
+
+    Bundled so the recursive element helpers take one context argument rather
+    than five parallel parameters.
+    """
+
+    name: str
+    description: str
+    parameters: str
+    input_model: str
+    parser: DocstringParser | None
 
 
 def extract_tool_registry(
@@ -32,6 +59,8 @@ def extract_tool_registry(
     name_field: str,
     description_field: str,
     parameters_field: str,
+    input_model_field: str = "input_model",
+    description_parser: DocstringParser | None = None,
 ) -> list[ToolRegistryEntry]:
     """Extract tool-registration entries from module-level list literals.
 
@@ -44,6 +73,12 @@ def extract_tool_registry(
         name_field: Field/key holding the registered function name.
         description_field: Field/key holding the tool description.
         parameters_field: Field/key holding the JSON Schema parameters object.
+        input_model_field: Field/key holding the input-model reference. When
+            its value is a bare ``Name``, the entry's ``input_model_ref`` is
+            populated with that symbol and its position (ADR-009).
+        description_parser: Parser used to read the description's ``Args:``
+            keys into ``description_arg_keys``. When None, that field stays
+            None and no description parsing is attempted.
 
     Returns:
         One ToolRegistryEntry per recognized entry, in source order. Entries
@@ -62,6 +97,13 @@ def extract_tool_registry(
     except SyntaxError:
         return []
 
+    fields = _Fields(
+        name=name_field,
+        description=description_field,
+        parameters=parameters_field,
+        input_model=input_model_field,
+        parser=description_parser,
+    )
     entries: list[ToolRegistryEntry] = []
     class_set = frozenset(tool_classes)
     for node in tree.body:
@@ -69,9 +111,7 @@ def extract_tool_registry(
         if not isinstance(value, ast.List):
             continue
         for elt in value.elts:
-            entry = _entry_from_element(
-                elt, class_set, name_field, description_field, parameters_field
-            )
+            entry = _entry_from_element(elt, class_set, fields)
             if entry is not None:
                 entries.append(entry)
     return entries
@@ -93,9 +133,7 @@ def _assignment_value(node: ast.stmt) -> ast.expr | None:
 def _entry_from_element(
     elt: ast.expr,
     class_set: frozenset[str],
-    name_field: str,
-    description_field: str,
-    parameters_field: str,
+    fields: _Fields,
 ) -> ToolRegistryEntry | None:
     """Build a ToolRegistryEntry from one list element, or None if it is not one.
 
@@ -104,56 +142,91 @@ def _entry_from_element(
     keys — a strong signal it is a tool schema and not incidental data.
     """
     if isinstance(elt, ast.Call):
-        return _entry_from_call(elt, class_set, name_field, description_field, parameters_field)
+        return _entry_from_call(elt, class_set, fields)
     if isinstance(elt, ast.Dict):
-        return _entry_from_dict(elt, name_field, description_field, parameters_field)
+        return _entry_from_dict(elt, fields)
     return None
 
 
 def _entry_from_call(
     call: ast.Call,
     class_set: frozenset[str],
-    name_field: str,
-    description_field: str,
-    parameters_field: str,
+    fields: _Fields,
 ) -> ToolRegistryEntry | None:
     """Build an entry from a ``ToolDefinition(name=..., ...)`` constructor call."""
     callee = _dotted_name(call.func)
     if callee is None or callee.split(".")[-1] not in {c.split(".")[-1] for c in class_set}:
         return None
     kwargs = {kw.arg: kw.value for kw in call.keywords if kw.arg is not None}
-    name = _string_value(kwargs.get(name_field))
+    name = _string_value(kwargs.get(fields.name))
     if name is None:
         return None  # dynamic name — cannot correlate
+    description = kwargs.get(fields.description)
     return ToolRegistryEntry(
         name=name,
         line=call.lineno,
         column=call.col_offset,
-        property_keys=_property_keys(kwargs.get(parameters_field)),
-        has_description=_has_nonempty_string(kwargs.get(description_field)),
+        property_keys=_property_keys(kwargs.get(fields.parameters)),
+        has_description=_has_nonempty_string(description),
+        input_model_ref=_model_ref(kwargs.get(fields.input_model)),
+        description_arg_keys=_description_arg_keys(description, fields.parser),
     )
 
 
 def _entry_from_dict(
     node: ast.Dict,
-    name_field: str,
-    description_field: str,
-    parameters_field: str,
+    fields: _Fields,
 ) -> ToolRegistryEntry | None:
     """Build an entry from a flat ``{"name": ..., "parameters": {...}}`` dict literal."""
     items = _string_keyed_items(node)
-    if name_field not in items or parameters_field not in items:
+    if fields.name not in items or fields.parameters not in items:
         return None  # require both name and parameters to avoid matching incidental dicts
-    name = _string_value(items[name_field])
+    name = _string_value(items[fields.name])
     if name is None:
         return None  # dynamic name — cannot correlate
+    description = items.get(fields.description)
     return ToolRegistryEntry(
         name=name,
         line=node.lineno,
         column=node.col_offset,
-        property_keys=_property_keys(items.get(parameters_field)),
-        has_description=_has_nonempty_string(items.get(description_field)),
+        property_keys=_property_keys(items.get(fields.parameters)),
+        has_description=_has_nonempty_string(description),
+        input_model_ref=_model_ref(items.get(fields.input_model)),
+        description_arg_keys=_description_arg_keys(description, fields.parser),
     )
+
+
+def _model_ref(node: ast.expr | None) -> ModelRef | None:
+    """Return the input-model reference for a bare Name node, or None.
+
+    Only a bare ``ast.Name`` is captured — the realistic ``input_model=Model``
+    shape the cross-file pass resolves (ADR-009). Attribute, call, and
+    subscript expressions are treated as dynamic and skipped.
+    """
+    if isinstance(node, ast.Name):
+        return ModelRef(name=node.id, line=node.lineno, column=node.col_offset)
+    return None
+
+
+def _description_arg_keys(
+    node: ast.expr | None, parser: DocstringParser | None
+) -> frozenset[str] | None:
+    """Return the Args: keys parsed from a string-literal description.
+
+    Returns None when no parser was supplied or the description is not a static
+    string literal (it cannot be parsed); an empty frozenset when the
+    description parses but has no Args section; otherwise the section's keys
+    with any ``*``/``**`` prefix stripped (matching DOC007).
+    """
+    if parser is None:
+        return None
+    text = _string_value(node)
+    if text is None:
+        return None
+    args = parser.parse(text).sections.get("Args")
+    if args is None:
+        return frozenset()
+    return frozenset(entry.key.lstrip("*") for entry in args.entries)
 
 
 def _property_keys(parameters: ast.expr | None) -> frozenset[str] | None:

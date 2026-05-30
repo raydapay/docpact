@@ -410,6 +410,8 @@ def _check_one_file(
             name_field=config.registry.name_field,
             description_field=config.registry.description_field,
             parameters_field=config.registry.parameters_field,
+            input_model_field=config.registry.input_model_field,
+            description_parser=parser,
         )
         floor_names = _registry_floor_names(registry_entries, file_path, config, root)
 

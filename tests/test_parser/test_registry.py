@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from docpact.parser.docstring import GoogleParser
 from docpact.parser.registry import extract_tool_registry
 
 _DEFAULTS = {
@@ -228,3 +229,81 @@ def test_entry_location_recorded() -> None:
     e = _extract(src)[0]
     assert e.line == 1
     assert e.column == 9  # position of the ToolDefinition call within the list
+
+
+# --- input_model reference (cross-file; ADR-009) ------------------------------
+
+
+def test_input_model_ref_captured_for_name() -> None:
+    src = 'TOOLS = [\n    ToolDefinition(name="f", input_model=SearchInput),\n]'
+    ref = _extract(src)[0].input_model_ref
+    assert ref is not None
+    assert ref.name == "SearchInput"
+    assert ref.line == 2  # 1-based
+    assert ref.column == src.splitlines()[1].index("SearchInput")  # 0-based
+
+
+def test_input_model_ref_absent_when_field_missing() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", parameters={"properties": {}})]'
+    assert _extract(src)[0].input_model_ref is None
+
+
+def test_input_model_ref_none_for_dynamic_expressions() -> None:
+    # Attribute, call, and subscript are dynamic — no bare Name to resolve.
+    for expr in ("schemas.SearchInput", "make_model()", "MODELS['search']"):
+        src = f'TOOLS = [ToolDefinition(name="f", input_model={expr})]'
+        assert _extract(src)[0].input_model_ref is None, expr
+
+
+def test_input_model_ref_in_dict_entry() -> None:
+    src = 'TOOLS = [{"name": "f", "input_model": SearchInput, "parameters": {"properties": {}}}]'
+    ref = _extract(src)[0].input_model_ref
+    assert ref is not None and ref.name == "SearchInput"
+
+
+def test_input_model_field_is_configurable() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", schema_model=SearchInput)]'
+    assert _extract(src)[0].input_model_ref is None  # default field name does not match
+    ref = _extract(src, input_model_field="schema_model")[0].input_model_ref
+    assert ref is not None and ref.name == "SearchInput"
+
+
+# --- description Args keys (cross-file; ADR-009) ------------------------------
+
+_DESC_WITH_ARGS = """Search for cases.
+
+Args:
+    query: The search string.
+    limit: Maximum number of results.
+"""
+
+
+def test_description_arg_keys_none_without_parser() -> None:
+    src = f'TOOLS = [ToolDefinition(name="f", description={_DESC_WITH_ARGS!r})]'
+    assert _extract(src)[0].description_arg_keys is None
+
+
+def test_description_arg_keys_parsed_with_parser() -> None:
+    src = f'TOOLS = [ToolDefinition(name="f", description={_DESC_WITH_ARGS!r})]'
+    keys = _extract(src, description_parser=GoogleParser())[0].description_arg_keys
+    assert keys == frozenset({"query", "limit"})
+
+
+def test_description_arg_keys_empty_when_no_args_section() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", description="Just a summary.")]'
+    assert _extract(src, description_parser=GoogleParser())[0].description_arg_keys == frozenset()
+
+
+def test_description_arg_keys_none_for_computed_description() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", description=DESC)]'
+    assert _extract(src, description_parser=GoogleParser())[0].description_arg_keys is None
+
+
+def test_description_arg_keys_in_dict_entry() -> None:
+    src = (
+        "TOOLS = [{"
+        f'"name": "f", "description": {_DESC_WITH_ARGS!r}, '
+        '"parameters": {"properties": {}}}]'
+    )
+    keys = _extract(src, description_parser=GoogleParser())[0].description_arg_keys
+    assert keys == frozenset({"query", "limit"})

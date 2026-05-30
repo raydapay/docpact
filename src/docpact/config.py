@@ -53,6 +53,7 @@ class RegistryConfig:
     name_field: str = "name"
     description_field: str = "description"
     parameters_field: str = "parameters"
+    input_model_field: str = "input_model"
     assign_tier: bool = True
     no_tier_floor: tuple[str, ...] = ()
 
@@ -393,6 +394,7 @@ def _parse_registry(raw: object) -> RegistryConfig:
         name_field=_field("name_field", defaults.name_field),
         description_field=_field("description_field", defaults.description_field),
         parameters_field=_field("parameters_field", defaults.parameters_field),
+        input_model_field=_field("input_model_field", defaults.input_model_field),
         assign_tier=assign_tier,
         no_tier_floor=no_tier_floor,
     )

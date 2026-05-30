@@ -6,13 +6,35 @@ call or an equivalent ``{"name": ..., "description": ..., "parameters": {...}}``
 dict literal — appearing in a module-level list.
 
 Built by docpact.parser.registry; consumed by the REG rules and by the
-Tier 3 floor in tier assignment. Same-file only: the entry carries no
-reference to where its named function is defined. See ADR-005.
+Tier 3 floor in tier assignment. The same-file REG rules read only the
+literal facts in this file's AST (see ADR-005); the optional
+``input_model_ref``/``description_arg_keys`` fields additionally feed the
+opt-in cross-file pass, which resolves the referenced model via LSP (ADR-009).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class ModelRef:
+    """A reference to an imported symbol used as a tool's input model.
+
+    Captures where, in *this* file, a registry entry names its input model
+    (e.g. ``ToolSpec(input_model=SearchTransactionsInput)``). The position
+    lets the cross-file pass fire ``textDocument/definition`` at the reference
+    to resolve the model's defining file (ADR-009). Positions follow docpact's
+    model convention — ``line`` is 1-based, ``column`` 0-based — so a caller
+    targeting an LSP server (0-based line) must subtract 1 from ``line``.
+
+    Only a bare ``Name`` reference is captured; attribute, call, and subscript
+    references are treated as dynamic and yield no ModelRef.
+    """
+
+    name: str  # the referenced symbol, e.g. "SearchTransactionsInput"
+    line: int  # 1-based line of the reference
+    column: int  # 0-based column of the reference
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +47,14 @@ class ToolRegistryEntry:
     the ``parameters`` schema is not a static dict literal — the REG001
     cross-check is skipped for such entries, the same literals-only
     discipline DOC021 applies to default values.
+
+    ``input_model_ref`` and ``description_arg_keys`` support the opt-in
+    cross-file pass (ADR-009) and are absent (None) for same-file-only use:
+    ``input_model_ref`` is the imported model reference + position (None unless
+    a bare Name was given for the configured input-model field);
+    ``description_arg_keys`` is the set of ``Args:`` keys parsed from the
+    entry's description string (None when there is no static string description
+    or no parser was supplied; an empty set when the description has no Args).
     """
 
     name: str  # value of the name field — the function this entry registers
@@ -32,3 +62,5 @@ class ToolRegistryEntry:
     column: int  # 0-based column of the entry node
     property_keys: frozenset[str] | None  # keys of parameters.properties; None if not static
     has_description: bool  # whether a non-empty description field is present (REG050, reserved)
+    input_model_ref: ModelRef | None = None  # imported input-model reference (ADR-009)
+    description_arg_keys: frozenset[str] | None = None  # Args: keys from the description (ADR-009)
