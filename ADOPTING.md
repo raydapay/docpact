@@ -54,6 +54,55 @@ lint:
     docpact check src/
 ```
 
+### Scheduled semantic check (advisory, secretless)
+
+`docpact semantic` is **advisory and non-deterministic**, so it does not belong in
+the blocking `check` job — run it on a schedule and read the report. The built-in
+`GITHUB_TOKEN` can call GitHub Models directly when the workflow grants
+`models: read`, so there is **no PAT or secret to manage**:
+
+```yaml
+# .github/workflows/semantic.yml
+name: docpact semantic
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
+  workflow_dispatch: {}    # also runnable on demand
+
+permissions:
+  contents: read
+  models: read             # lets GITHUB_TOKEN call GitHub Models — no secret needed
+
+jobs:
+  semantic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - name: Semantic docstring review (advisory)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: uv run docpact semantic src/ --exit-zero >> "$GITHUB_STEP_SUMMARY"
+```
+
+with the matching config:
+
+```toml
+[tool.docpact.semantic]
+backend = "openai-compat"
+model = "openai/gpt-4o-mini"
+api_base = "https://models.github.ai/inference"
+api_key_env = "GITHUB_TOKEN"     # the workflow sets this from github.token
+# min_tier = 3                   # scope to agent-facing tools (default)
+```
+
+`--exit-zero` keeps the job green — findings are a report (in the run's **Summary**),
+not a gate. Notes: it sends docstring/signature text to GitHub Models (GitHub's own
+service); free-tier limits are ample for a weekly batched run; to use a different
+provider or your own key, point `api_base`/`api_key_env` at it (the backend is
+pluggable — see ADR-008).
+
 ---
 
 ## Pre-commit integration
