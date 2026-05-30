@@ -134,6 +134,42 @@ Tier 4 allows opt-in to Tier 3 strictness without MCP decorators:
 
 ---
 
+## Recommended posture for MCP / agent-tool surfaces
+
+If your codebase exposes tools to an LLM, the docstring *is* the contract the agent
+reads to decide what to call and how — so hold those functions to the strictest tier
+and the highest-signal sections. A posture that matches what teams enforce in
+practice:
+
+```toml
+[tool.docpact]
+select = ["DOC", "MCP", "REG"]   # REG only if you use a same-file tool registry
+require_examples_min_tier = 3    # DOC052: Examples is the highest-signal section
+                                 # for a tool-calling agent — require it on Tier 3 tools
+
+[tool.docpact.pydantic]
+undescribed_fields = "error"     # DOC050: every Pydantic input-model field needs a description
+```
+
+Get tools onto Tier 3 by `@mcp.tool` (automatic), a same-file `ToolDefinition`
+registry (the `REG` Tier-3 floor), or `per-file-tier = 3` on the tools module.
+
+**Two honest limits**, both consequences of docpact being a *static, per-file* linter
+(see ADR-006):
+
+- **DOC012/DOC052 read the function's own docstring.** If your tool's human-facing
+  description lives in a separate `description="..."` string passed to a registration
+  (not the function docstring), those rules check the function, not that string.
+  Put the contract on the function, or that description won't be linted.
+- **Cross-file parity is not checked.** Whether a tool's documented `Args` match an
+  *imported* Pydantic input model, or constraints (`ge=`, `Literal[...]`) are surfaced
+  in prose, is correlation across modules — out of scope until docpact can consume
+  ty (ADR-006). Keep that in a project-local contract test for now. docpact covers the
+  per-file pieces: field descriptions present (DOC050), a required Examples block
+  (DOC052), and the function's own docstring↔signature parity (DOC007/DOC012).
+
+---
+
 ## Tuning for your repo
 
 ### Suppress noisy rules at file level
