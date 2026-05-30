@@ -329,6 +329,9 @@ reflects a real runtime invariant.
    ADR drafted and proposed to Ray.
 7. Any breaking change has `!` in the commit subject and a `BREAKING CHANGE:`
    footer. No exceptions — the automated pipeline has no other way to flag it.
+8. Run `make verify` **before** the final commit — it *writes* (stats-update refreshes
+   README's test/coverage line; `make docs` regenerates `docs/rules/`). Stage what it
+   changes, or CI's non-mutating `stats-check`/`docs-check` fails on the stale committed copy.
 
 ---
 
