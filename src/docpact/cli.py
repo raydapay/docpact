@@ -28,6 +28,7 @@ from docpact.config import (
     ConfigResult,
     file_ignores_for,
     file_is_excluded,
+    file_matches_any,
     file_tier_override_for,
     load_config,
     load_config_from,
@@ -46,6 +47,7 @@ from docpact.output import (
     format_text,
 )
 from docpact.parser.docstring import GoogleParser, NumpyParser
+from docpact.parser.registry import extract_tool_registry
 from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
 from docpact.rules import load_builtin_rules
 from docpact.rules._registry import RuleConfig, RuleFn, RuleMetadata, all_rules
@@ -57,6 +59,8 @@ from docpact.rules.fix.fix002_no_reason import check_no_reason
 from docpact.rules.fix.fix003_stale_suppression import check_stale_suppressions
 from docpact.rules.fix.fix004_misplaced_suppression import check_misplaced_suppressions
 from docpact.rules.parse.parse001_syntax_error import check_syntax_error as check_parse_syntax_error
+from docpact.rules.reg.reg001_schema_phantom_param import check_registry_phantom_params
+from docpact.rules.reg.reg002_unmatched_entry import check_unmatched_entries
 from docpact.suppress import apply_suppressions, parse_suppressions
 from docpact.tiers import assign_tier
 
@@ -65,6 +69,7 @@ load_builtin_rules()
 if TYPE_CHECKING:
     from docpact.model.diagnostic import RuleResult
     from docpact.model.function_info import FunctionInfo
+    from docpact.model.tool_registry import ToolRegistryEntry
 
 
 def _get_changed_py_files(ref: str, cwd: Path) -> set[Path]:
@@ -148,11 +153,23 @@ def _expand_codes(codes: tuple[str, ...]) -> tuple[str, ...]:
 # Codes handled outside the per-function loop in _run_checks.
 # FIX001/FIX002/FIX004/DOC002/DOC003/DOC050 run as a pre-pass (once per file);
 # FIX003 runs as a post-pass (needs the full file violation set);
+# REG001/REG002 run as a post-pass (need the file's functions and registry);
 # PARSE001 is emitted on SyntaxError before the function loop runs.
 # Invariant: every code here must appear in _run_checks's match block OR the
-# FIX003 post-pass block. The test_file_level_codes_invariant test enforces this.
+# FIX003/REG post-pass blocks. The test_file_level_codes_invariant test enforces this.
 _FILE_LEVEL_CODES: frozenset[str] = frozenset(
-    {"FIX001", "FIX002", "FIX003", "FIX004", "DOC002", "DOC003", "DOC050", "PARSE001"}
+    {
+        "FIX001",
+        "FIX002",
+        "FIX003",
+        "FIX004",
+        "DOC002",
+        "DOC003",
+        "DOC050",
+        "PARSE001",
+        "REG001",
+        "REG002",
+    }
 )
 
 
@@ -221,6 +238,7 @@ def _run_function_level_rules(
     source_text: str,
     parser: GoogleParser | NumpyParser,
     all_names: frozenset[str] | None,
+    registered_tool_names: frozenset[str] | None,
     extra_ignores: frozenset[str],
     config: Config,
     root: Path,
@@ -231,7 +249,13 @@ def _run_function_level_rules(
     file_results: list[RuleResult] = []
     for func in functions:
         doc = parser.parse(func.docstring_raw) if func.docstring_raw is not None else None
-        tier = assign_tier(func, config.tier_overrides, all_names=all_names, root=root)
+        tier = assign_tier(
+            func,
+            config.tier_overrides,
+            all_names=all_names,
+            registered_tool_names=registered_tool_names,
+            root=root,
+        )
         if config.allow_pragma:
             line_text = source_lines[func.line - 1] if 0 < func.line <= len(source_lines) else ""
             pragma_tier = parse_tier_pragma(line_text)
@@ -253,6 +277,66 @@ def _run_function_level_rules(
                 continue
             cfg = RuleConfig(severity=severity, options=config_options)
             file_results.extend(rule_fn(func, doc, cfg))
+    return file_results
+
+
+def _registry_is_active(config: Config, extra_ignores: frozenset[str]) -> bool:
+    """Return True if REG-namespace detection should run for a file.
+
+    The REG namespace is opt-in: a project enables registry detection (the
+    REG rules and the Tier 3 floor) by adding ``REG`` to ``select``. File-level
+    ``per-file-ignores`` of the whole namespace also disables it.
+    """
+    return rule_is_enabled("REG001", "REG", config.select, config.ignore) and not (
+        rule_is_file_ignored("REG001", "REG", extra_ignores)
+        and rule_is_file_ignored("REG002", "REG", extra_ignores)
+    )
+
+
+def _registry_floor_names(
+    entries: list[ToolRegistryEntry],
+    file_path: Path,
+    config: Config,
+    root: Path,
+) -> frozenset[str] | None:
+    """Return the registered names that should receive the Tier 3 floor, or None.
+
+    None when the floor is disabled for this file — either ``assign_tier = false``
+    project-wide or the file matches a ``no_tier_floor`` glob (ADR-005).
+    """
+    if not entries or not config.registry.assign_tier:
+        return None
+    if file_matches_any(file_path, config.registry.no_tier_floor, root):
+        return None
+    return frozenset(e.name for e in entries)
+
+
+def _run_registry_rules(
+    functions: list[FunctionInfo],
+    entries: list[ToolRegistryEntry],
+    file_path: Path,
+    extra_ignores: frozenset[str],
+    config: Config,
+    rules: dict[str, tuple[RuleMetadata, RuleFn]],
+) -> list[RuleResult]:
+    """Run REG001/REG002 over a file's functions and extracted registry entries."""
+    file_results: list[RuleResult] = []
+    for code, check_fn in (
+        ("REG001", check_registry_phantom_params),
+        ("REG002", check_unmatched_entries),
+    ):
+        if code not in rules:
+            continue
+        if not rule_is_enabled(code, "REG", config.select, config.ignore):
+            continue
+        if rule_is_file_ignored(code, "REG", extra_ignores):
+            continue
+        meta, _ = rules[code]
+        severity = config.rule_severities.get(code, meta.default_severity)
+        if severity == Severity.OFF:
+            continue
+        cfg = RuleConfig(severity=severity, options={})
+        file_results.extend(check_fn(functions, entries, file_path, cfg))
     return file_results
 
 
@@ -298,6 +382,20 @@ def _run_checks(
             results.extend(file_results)
             continue
 
+        # Tool-registry extraction (ADR-005): opt-in via the REG namespace.
+        # Feeds both the Tier 3 floor below and the REG post-pass.
+        registry_entries: list[ToolRegistryEntry] = []
+        floor_names: frozenset[str] | None = None
+        if _registry_is_active(config, extra_ignores):
+            registry_entries = extract_tool_registry(
+                source_text,
+                tool_classes=config.registry.tool_definition_class,
+                name_field=config.registry.name_field,
+                description_field=config.registry.description_field,
+                parameters_field=config.registry.parameters_field,
+            )
+            floor_names = _registry_floor_names(registry_entries, file_path, config, root)
+
         file_results.extend(
             _run_function_level_rules(
                 file_path,
@@ -305,12 +403,21 @@ def _run_checks(
                 source_text,
                 parser,
                 all_names,
+                floor_names,
                 extra_ignores,
                 config,
                 root,
                 rules,
             )
         )
+
+        # REG post-pass: needs the file's functions and its registry entries.
+        if registry_entries:
+            file_results.extend(
+                _run_registry_rules(
+                    functions, registry_entries, file_path, extra_ignores, config, rules
+                )
+            )
 
         # FIX003 post-pass: needs the complete violation set for this file.
         if (

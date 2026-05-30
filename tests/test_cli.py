@@ -728,14 +728,14 @@ def test_file_level_codes_matches_dispatch() -> None:
     """Every code in _FILE_LEVEL_CODES must be handled by _run_checks, and vice versa.
 
     Pre-pass codes are dispatched in the for-loop match block.
-    FIX003 runs as a post-pass.
+    FIX003 and the REG rules run as post-passes.
     PARSE001 is emitted on SyntaxError before the function loop.
     If this test fails, a code was added to one place but not the other.
     """
     from docpact.cli import _FILE_LEVEL_CODES  # type: ignore[attr-defined]
 
     pre_pass = {"FIX001", "FIX002", "FIX004", "DOC002", "DOC003", "DOC050"}
-    post_pass = {"FIX003"}
+    post_pass = {"FIX003", "REG001", "REG002"}
     syntax_error_path = {"PARSE001"}
     expected = pre_pass | post_pass | syntax_error_path
 

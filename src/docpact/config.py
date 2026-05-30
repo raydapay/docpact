@@ -38,6 +38,26 @@ class ConfigResult:
 
 
 @dataclass(frozen=True, slots=True)
+class RegistryConfig:
+    """Configuration for tool-registry detection (REG namespace; ADR-005).
+
+    Drives same-file cross-checking of programmatic tool-registration entries
+    against the functions they name. ``assign_tier`` and ``no_tier_floor``
+    govern only the Tier 3 floor; the REG rules themselves run regardless of
+    those two (they are gated by REG namespace selection alone).
+
+    Stability: beta
+    """
+
+    tool_definition_class: tuple[str, ...] = ("ToolDefinition",)
+    name_field: str = "name"
+    description_field: str = "description"
+    parameters_field: str = "parameters"
+    assign_tier: bool = True
+    no_tier_floor: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     """Resolved configuration.
 
@@ -59,6 +79,7 @@ class Config:
     allow_pragma: bool = False
     respect_gitignore: bool = True
     require_examples_min_tier: int | None = None
+    registry: RegistryConfig = field(default_factory=RegistryConfig)
 
 
 _SEVERITY_MAP: dict[str, Severity] = {
@@ -187,6 +208,8 @@ def _parse_section(raw: dict[str, object]) -> Config:
             raise ConfigError("require_examples_min_tier: must be an integer 1-4")
         require_examples_min_tier = v
 
+    registry = _parse_registry(raw["registry"]) if "registry" in raw else RegistryConfig()
+
     return Config(
         schema=schema,
         docstring_format=docstring_format,
@@ -201,6 +224,50 @@ def _parse_section(raw: dict[str, object]) -> Config:
         allow_pragma=allow_pragma,
         respect_gitignore=respect_gitignore,
         require_examples_min_tier=require_examples_min_tier,
+        registry=registry,
+    )
+
+
+def _parse_registry(raw: object) -> RegistryConfig:
+    """Build a RegistryConfig from a raw [tool.docpact.registry] mapping."""
+    if not isinstance(raw, dict):
+        raise ConfigError("registry: expected a table")
+    data: dict[str, object] = {str(k): v for k, v in raw.items()}
+
+    defaults = RegistryConfig()
+    tool_classes = defaults.tool_definition_class
+    if "tool_definition_class" in data:
+        tool_classes = _parse_string_list(
+            data["tool_definition_class"], "registry.tool_definition_class"
+        )
+
+    def _field(key: str, default: str) -> str:
+        """Return a required-string field's value, or its default if absent."""
+        if key not in data:
+            return default
+        v = data[key]
+        if not isinstance(v, str):
+            raise ConfigError(f"registry.{key}: expected a string")
+        return v
+
+    assign_tier = defaults.assign_tier
+    if "assign_tier" in data:
+        v = data["assign_tier"]
+        if not isinstance(v, bool):
+            raise ConfigError("registry.assign_tier: expected a boolean")
+        assign_tier = v
+
+    no_tier_floor = defaults.no_tier_floor
+    if "no_tier_floor" in data:
+        no_tier_floor = _parse_string_list(data["no_tier_floor"], "registry.no_tier_floor")
+
+    return RegistryConfig(
+        tool_definition_class=tool_classes,
+        name_field=_field("name_field", defaults.name_field),
+        description_field=_field("description_field", defaults.description_field),
+        parameters_field=_field("parameters_field", defaults.parameters_field),
+        assign_tier=assign_tier,
+        no_tier_floor=no_tier_floor,
     )
 
 
@@ -414,6 +481,37 @@ def file_tier_override_for(
         ):
             return tier
     return None
+
+
+def file_matches_any(file_path: Path, patterns: tuple[str, ...], root: Path) -> bool:
+    """Return True if a file matches any of the given root-anchored globs.
+
+    Used for plain glob lists such as ``registry.no_tier_floor``. Unlike
+    file_is_excluded, no trailing-slash directory shorthand is applied — the
+    patterns are matched verbatim (relative-to-root, then absolute, then
+    basename-anchored), the same three-way match used elsewhere.
+
+    Args:
+        file_path: Path to test.
+        patterns: fnmatch glob patterns anchored to root.
+        root: Project root directory; patterns are matched relative to it.
+
+    Returns:
+        True when the file matches at least one pattern.
+    """
+    abs_str = file_path.as_posix()
+    try:
+        rel_str = file_path.relative_to(root).as_posix()
+    except ValueError:
+        rel_str = abs_str
+    for pattern in patterns:
+        if (
+            fnmatch.fnmatch(rel_str, pattern)
+            or fnmatch.fnmatch(abs_str, pattern)
+            or fnmatch.fnmatch(abs_str, f"*/{pattern}")
+        ):
+            return True
+    return False
 
 
 def file_is_excluded(file_path: Path, exclude: tuple[str, ...], root: Path) -> bool:

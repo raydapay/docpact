@@ -424,3 +424,62 @@ def test_load_config_from_bad_toml(tmp_path: Path) -> None:
     bad.write_text("select = [not valid\n")
     with pytest.raises(ConfigError, match="TOML parse error"):
         load_config_from(bad)
+
+
+# ---------------------------------------------------------------------------
+# [tool.docpact.registry] — RegistryConfig (ADR-005)
+# ---------------------------------------------------------------------------
+
+
+def test_registry_defaults_when_absent(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC"]\n')
+    cfg = load_config(tmp_path).config
+    assert cfg.registry.tool_definition_class == ("ToolDefinition",)
+    assert cfg.registry.name_field == "name"
+    assert cfg.registry.description_field == "description"
+    assert cfg.registry.parameters_field == "parameters"
+    assert cfg.registry.assign_tier is True
+    assert cfg.registry.no_tier_floor == ()
+
+
+def test_registry_full_override(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.docpact]\n"
+        'select = ["REG"]\n\n'
+        "[tool.docpact.registry]\n"
+        'tool_definition_class = ["ToolDefinition", "MyTool"]\n'
+        'name_field = "fn_name"\n'
+        'description_field = "desc"\n'
+        'parameters_field = "schema"\n'
+        "assign_tier = false\n"
+        'no_tier_floor = ["src/legacy/**"]\n'
+    )
+    reg = load_config(tmp_path).config.registry
+    assert reg.tool_definition_class == ("ToolDefinition", "MyTool")
+    assert reg.name_field == "fn_name"
+    assert reg.description_field == "desc"
+    assert reg.parameters_field == "schema"
+    assert reg.assign_tier is False
+    assert reg.no_tier_floor == ("src/legacy/**",)
+
+
+def test_registry_assign_tier_must_be_bool(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.docpact]\nselect = ["REG"]\n\n[tool.docpact.registry]\nassign_tier = "yes"\n'
+    )
+    with pytest.raises(ConfigError, match="assign_tier"):
+        load_config(tmp_path)
+
+
+def test_registry_name_field_must_be_string(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.docpact]\nselect = ["REG"]\n\n[tool.docpact.registry]\nname_field = 42\n'
+    )
+    with pytest.raises(ConfigError, match="name_field"):
+        load_config(tmp_path)
+
+
+def test_registry_not_a_table(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nregistry = "nope"\n')
+    with pytest.raises(ConfigError, match="registry"):
+        load_config(tmp_path)
