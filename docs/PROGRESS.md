@@ -418,9 +418,13 @@ with hand-written assertions. A declarative rule would be more robust and requir
 no per-project maintenance. The long-term value is catching silent drift when a
 ToolSpec is updated but the tool docstring is not.
 
-**Decision pending:** Whether docpact should ever cross the per-file boundary at all.
-If the answer is no, MCP-REG-001 is permanently out of scope. If the answer is yes,
-it needs an ADR and a new architectural layer. Not deciding now.
+**Decision (ADR-006, 2026-05-30):** docpact stays per-file for the interim. The
+cross-file boundary is **not** crossed in Python — a hand-rolled module graph is
+vetoed (false-positive tar pit), and a griffe-backed opt-in deep mode is deferred.
+The strategic path for cross-file is to **consume ty's API** once it formalizes a
+stable plugin / semantic-model surface; until then, cross-file (the imported-function
+registration pattern) remains out of scope. Per-file scope is gated on ty maturity,
+not on Python free-threading. See ADR-006 for the full why/why-not and revisit triggers.
 
 ---
 
