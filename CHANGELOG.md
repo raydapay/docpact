@@ -1,13 +1,19 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
-## [0.1.0a6] — 2026-05-30
+## [0.1.0a7] — 2026-05-30
+
+### Added
+- **cli:** Opt-in parallel analysis (--jobs) and docpact bench
+- **semantic:** Open the SEM layer — docpact semantic + pluggable LLM backend
+
 
 ### Fixed
-- **release:** Relock uv.lock on version bump
+- **cli:** Guard resource access for Windows typecheck
+- Register DOC052 — shipped but never loaded
 
 
-## [0.1.0a5] — 2026-05-30
+## [0.1.0a6] — 2026-05-30
 
 ### Added
 - **parser:** Extract same-file tool-registry entries
@@ -18,6 +24,7 @@ Generated from conventional commits. Only `feat:` and `fix:` entries appear.
 
 ### Fixed
 - Drop unused ty:ignore directive in DOC052
+- **release:** Relock uv.lock on version bump
 
 
 ## [0.1.0a4] — 2026-05-21
@@ -80,7 +87,7 @@ Generated from conventional commits. Only `feat:` and `fix:` entries appear.
 - **output:** Color diagnostics + --color auto|always|never
 - --output-file writes output to a file instead of stdout
 - **DOC013:** Add safe fix — replace non-canonical body with 'None.'
-- Round-2 external dry-run fixes — bool norm, per-file-tier DOC003, comma CLI
+- Round-2 external dry-run — bool norm, per-file-tier DOC003, comma CLI
 - **DOC022:** Typed prose annotation mismatch
 - ConfigResult, --config flag, root-anchored glob matching
 - **rules:** Add PARSE001 — Python syntax error rule
