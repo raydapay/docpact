@@ -13,8 +13,11 @@ Implementation notes:
 from __future__ import annotations
 
 import dataclasses
+import functools
+import os
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -340,101 +343,155 @@ def _run_registry_rules(
     return file_results
 
 
+def _check_one_file(
+    file_path: Path,
+    config: Config,
+    root: Path,
+) -> tuple[list[RuleResult], dict[int, frozenset[str]]]:
+    """Run all enabled rules over a single file.
+
+    Self-contained so it can run unchanged in the main process or in a worker
+    process: it derives the rule registry and parser itself rather than taking
+    them as arguments, and all of its inputs (Path, Config, Path) are picklable.
+
+    Args:
+        file_path: The .py file to analyze.
+        config: Resolved configuration.
+        root: Project root, for anchoring per-file glob patterns.
+
+    Returns:
+        A pair of (diagnostics for this file, suppression map for this file).
+        Diagnostics are unsorted; the caller sorts the merged set.
+    """
+    rules = all_rules()
+    parser: GoogleParser | NumpyParser = (
+        NumpyParser() if config.docstring_format == "numpy" else GoogleParser()
+    )
+
+    source_text = file_path.read_text(encoding="utf-8", errors="replace")
+    file_suppressions = parse_suppressions(source_text, markers=config.suppress_comment)
+    extra_ignores = file_ignores_for(file_path, config.per_file_ignores, root)
+
+    # Accumulate per-file so FIX003 can inspect the full violation set.
+    file_results = _run_file_level_rules(
+        file_path, source_text, file_suppressions, extra_ignores, config, root, rules
+    )
+
+    all_names = parse_all_names(source_text)
+
+    try:
+        functions = extract_functions(file_path)
+    except SyntaxError as exc:
+        if (
+            "PARSE001" in rules
+            and rule_is_enabled("PARSE001", "PARSE", config.select, config.ignore)
+            and not rule_is_file_ignored("PARSE001", "PARSE", extra_ignores)
+        ):
+            meta, _ = rules["PARSE001"]
+            severity = config.rule_severities.get("PARSE001", meta.default_severity)
+            if severity != Severity.OFF:
+                cfg = RuleConfig(severity=severity, options={})
+                file_results.append(check_parse_syntax_error(exc, file_path, cfg))
+        return file_results, file_suppressions
+
+    # Tool-registry extraction (ADR-005): opt-in via the REG namespace.
+    # Feeds both the Tier 3 floor below and the REG post-pass.
+    registry_entries: list[ToolRegistryEntry] = []
+    floor_names: frozenset[str] | None = None
+    if _registry_is_active(config, extra_ignores):
+        registry_entries = extract_tool_registry(
+            source_text,
+            tool_classes=config.registry.tool_definition_class,
+            name_field=config.registry.name_field,
+            description_field=config.registry.description_field,
+            parameters_field=config.registry.parameters_field,
+        )
+        floor_names = _registry_floor_names(registry_entries, file_path, config, root)
+
+    file_results.extend(
+        _run_function_level_rules(
+            file_path,
+            functions,
+            source_text,
+            parser,
+            all_names,
+            floor_names,
+            extra_ignores,
+            config,
+            root,
+            rules,
+        )
+    )
+
+    # REG post-pass: needs the file's functions and its registry entries.
+    if registry_entries:
+        file_results.extend(
+            _run_registry_rules(
+                functions, registry_entries, file_path, extra_ignores, config, rules
+            )
+        )
+
+    # FIX003 post-pass: needs the complete violation set for this file.
+    if (
+        "FIX003" in rules
+        and rule_is_enabled("FIX003", "FIX", config.select, config.ignore)
+        and not rule_is_file_ignored("FIX003", "FIX", extra_ignores)
+    ):
+        meta, _ = rules["FIX003"]
+        severity = config.rule_severities.get("FIX003", meta.default_severity)
+        if severity != Severity.OFF:
+            cfg = RuleConfig(severity=severity, options={})
+            file_results.extend(
+                check_stale_suppressions(
+                    source_text, file_suppressions, file_results, file_path, cfg
+                )
+            )
+
+    return file_results, file_suppressions
+
+
+def _resolve_jobs(jobs: int) -> int:
+    """Resolve a configured jobs value to a concrete worker count (>= 1)."""
+    if jobs == 0:  # auto
+        return os.cpu_count() or 1
+    return max(1, jobs)
+
+
+def _map_files(
+    py_files: list[Path],
+    config: Config,
+    root: Path,
+) -> list[tuple[list[RuleResult], dict[int, frozenset[str]]]]:
+    """Analyze every file, serially or across worker processes per config.jobs.
+
+    Executor choice is isolated here so a future switch to ThreadPoolExecutor
+    (under free-threaded Python) is a one-line change — see ADR-006 item 5.
+    """
+    workers = _resolve_jobs(config.jobs)
+    if workers == 1 or len(py_files) <= 1:
+        return [_check_one_file(f, config, root) for f in py_files]
+
+    # ProcessPoolExecutor: CPU-bound parsing needs real parallelism, which the
+    # GIL denies to threads. map() preserves input order; results are sorted
+    # again below, so completion order never affects output (determinism holds).
+    worker = functools.partial(_check_one_file, config=config, root=root)
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        return list(executor.map(worker, py_files))
+
+
 def _run_checks(
     py_files: list[Path],
     config: Config,
     root: Path,
 ) -> tuple[list[RuleResult], dict[Path, dict[int, frozenset[str]]]]:
     """Run all enabled rules over the given files and return results with suppression maps."""
-    parser: GoogleParser | NumpyParser = (
-        NumpyParser() if config.docstring_format == "numpy" else GoogleParser()
-    )
-    rules = all_rules()
     results: list[RuleResult] = []
     suppressions: dict[Path, dict[int, frozenset[str]]] = {}
 
-    for file_path in py_files:
-        source_text = file_path.read_text(encoding="utf-8", errors="replace")
-        file_suppressions = parse_suppressions(source_text, markers=config.suppress_comment)
+    for file_path, (file_results, file_suppressions) in zip(
+        py_files, _map_files(py_files, config, root), strict=True
+    ):
         suppressions[file_path] = file_suppressions
-        extra_ignores = file_ignores_for(file_path, config.per_file_ignores, root)
-
-        # Accumulate per-file so FIX003 can inspect the full violation set.
-        file_results = _run_file_level_rules(
-            file_path, source_text, file_suppressions, extra_ignores, config, root, rules
-        )
-
-        all_names = parse_all_names(source_text)
-
-        try:
-            functions = extract_functions(file_path)
-        except SyntaxError as exc:
-            if (
-                "PARSE001" in rules
-                and rule_is_enabled("PARSE001", "PARSE", config.select, config.ignore)
-                and not rule_is_file_ignored("PARSE001", "PARSE", extra_ignores)
-            ):
-                meta, _ = rules["PARSE001"]
-                severity = config.rule_severities.get("PARSE001", meta.default_severity)
-                if severity != Severity.OFF:
-                    cfg = RuleConfig(severity=severity, options={})
-                    file_results.append(check_parse_syntax_error(exc, file_path, cfg))
-            results.extend(file_results)
-            continue
-
-        # Tool-registry extraction (ADR-005): opt-in via the REG namespace.
-        # Feeds both the Tier 3 floor below and the REG post-pass.
-        registry_entries: list[ToolRegistryEntry] = []
-        floor_names: frozenset[str] | None = None
-        if _registry_is_active(config, extra_ignores):
-            registry_entries = extract_tool_registry(
-                source_text,
-                tool_classes=config.registry.tool_definition_class,
-                name_field=config.registry.name_field,
-                description_field=config.registry.description_field,
-                parameters_field=config.registry.parameters_field,
-            )
-            floor_names = _registry_floor_names(registry_entries, file_path, config, root)
-
-        file_results.extend(
-            _run_function_level_rules(
-                file_path,
-                functions,
-                source_text,
-                parser,
-                all_names,
-                floor_names,
-                extra_ignores,
-                config,
-                root,
-                rules,
-            )
-        )
-
-        # REG post-pass: needs the file's functions and its registry entries.
-        if registry_entries:
-            file_results.extend(
-                _run_registry_rules(
-                    functions, registry_entries, file_path, extra_ignores, config, rules
-                )
-            )
-
-        # FIX003 post-pass: needs the complete violation set for this file.
-        if (
-            "FIX003" in rules
-            and rule_is_enabled("FIX003", "FIX", config.select, config.ignore)
-            and not rule_is_file_ignored("FIX003", "FIX", extra_ignores)
-        ):
-            meta, _ = rules["FIX003"]
-            severity = config.rule_severities.get("FIX003", meta.default_severity)
-            if severity != Severity.OFF:
-                cfg = RuleConfig(severity=severity, options={})
-                file_results.extend(
-                    check_stale_suppressions(
-                        source_text, file_suppressions, file_results, file_path, cfg
-                    )
-                )
-
         results.extend(file_results)
 
     results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
@@ -569,6 +626,16 @@ def main() -> None:
     is_flag=True,
     help="Treat warning-severity diagnostics as errors for the purpose of the exit code.",
 )
+@click.option(
+    "--jobs",
+    "-j",
+    "jobs",
+    type=click.IntRange(min=0),
+    default=None,
+    metavar="N",
+    help="Worker processes for file analysis (0 = all cores, 1 = serial). "
+    "Overrides config; default serial. Run 'docpact bench' to find your break-even.",
+)
 def check(  # nodo: DOC012 -- click params; Args section would duplicate --help text
     paths: tuple[str, ...],
     do_fix: bool,
@@ -593,6 +660,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     show_files: bool,
     exit_non_zero_on_fix: bool,
     error_on_warning: bool,
+    jobs: int | None,
 ) -> None:
     """Check docstrings against the configured schema."""
     if unsafe_fixes and not do_fix:
@@ -623,6 +691,8 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         config = dataclasses.replace(config, select=(*config.select, *cli_extend_select))
     if cli_extend_ignore:
         config = dataclasses.replace(config, ignore=(*config.ignore, *cli_extend_ignore))
+    if jobs is not None:
+        config = dataclasses.replace(config, jobs=jobs)
 
     py_files = _collect_py_files(paths, config, config_root)
     if config.respect_gitignore and not no_respect_gitignore:
@@ -899,6 +969,135 @@ def list_rules(  # nodo: DOC012 -- click params; Args section would duplicate --
         fix_marker += "[!]" if meta.unsafe_fixable else "   "
         click.echo(
             f"{meta.code:<8}  {meta.default_severity.value:<8}  {fix_marker}  {meta.summary}"
+        )
+
+
+def _peak_rss_mb(children: bool) -> float | None:
+    """Return the high-water resident set size in MB, or None if unmeasurable.
+
+    Reads getrusage (Unix only; returns None on platforms without `resource`,
+    e.g. Windows). ru_maxrss is kilobytes on Linux and bytes on macOS.
+    """
+    try:
+        import resource
+    except ImportError:
+        return None
+    who = resource.RUSAGE_CHILDREN if children else resource.RUSAGE_SELF
+    raw = resource.getrusage(who).ru_maxrss
+    return raw / (1024 * 1024) if sys.platform == "darwin" else raw / 1024
+
+
+def _bench_config(paths: tuple[str, ...]) -> tuple[Config, Path, list[Path]]:
+    """Load config and collect the files to benchmark for the given paths."""
+    cfg_result = load_config(Path.cwd())
+    config, root = cfg_result.config, cfg_result.root
+    files = _collect_py_files(paths, config, root)
+    if config.respect_gitignore:
+        files = _filter_gitignored(files, Path.cwd())
+    return config, root, files
+
+
+def _bench_times(files: list[Path], config: Config, root: Path, runs: int) -> list[float]:
+    """Return wall-clock seconds for each of `runs` full check passes under config."""
+    import time
+
+    out: list[float] = []
+    for _ in range(runs):
+        start = time.perf_counter()
+        _run_checks(files, config, root)
+        out.append(time.perf_counter() - start)
+    return out
+
+
+def _fmt_mb(value: float | None) -> str:
+    """Format a memory value in MB, or an em dash when unmeasurable (e.g. Windows)."""
+    return f"{value:.0f} MB" if value is not None else "—"
+
+
+@main.command()
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option(
+    "--runs",
+    type=click.IntRange(min=1),
+    default=3,
+    show_default=True,
+    help="Timed runs per configuration.",
+)
+@click.option(
+    "--jobs",
+    "-j",
+    "jobs",
+    type=click.IntRange(min=0),
+    default=0,
+    metavar="N",
+    help="Worker count to benchmark against serial (0 = all cores).",
+)
+def bench(  # nodo: DOC012 -- click params; Args section would duplicate --help text
+    paths: tuple[str, ...],
+    runs: int,
+    jobs: int,
+) -> None:
+    """Measure serial vs parallel analysis on your own tree and recommend a jobs value.
+
+    The serial/parallel break-even depends on your project size, file complexity,
+    core count, and OS — not on anything docpact can know in advance. This runs
+    both on your actual files and reports wall-time and memory so you can decide.
+    """
+    import statistics
+
+    config, root, files = _bench_config(paths)
+    if not files:
+        raise click.UsageError("no .py files found to benchmark")
+
+    workers = _resolve_jobs(jobs)
+    if workers == 1:
+        workers = os.cpu_count() or 1
+    serial_cfg = dataclasses.replace(config, jobs=1)
+    parallel_cfg = dataclasses.replace(config, jobs=workers)
+
+    click.echo(f"docpact bench — {len(files)} files, {runs} run(s) each, {workers} workers")
+    if len(files) < 2:
+        click.echo("note: <2 files; parallel cannot help here.")
+
+    # Warm-up (filesystem + import caches) so the first timed run isn't penalized.
+    _run_checks(files, serial_cfg, root)
+
+    serial_times = _bench_times(files, serial_cfg, root, runs)
+    serial_peak = _peak_rss_mb(children=False)  # in-process peak reflects serial work
+    parallel_times = _bench_times(files, parallel_cfg, root, runs)
+    worker_peak = _peak_rss_mb(children=True)  # largest single worker
+
+    serial_med = statistics.median(serial_times)
+    parallel_med = statistics.median(parallel_times)
+    speedup = serial_med / parallel_med if parallel_med else 0.0
+
+    click.echo("")
+    click.echo(
+        f"  serial (jobs=1):        {serial_med * 1000:8.1f} ms   peak {_fmt_mb(serial_peak)}"
+    )
+    click.echo(
+        f"  parallel (jobs={workers}):"
+        f"{'':>{max(0, 7 - len(str(workers)))}}{parallel_med * 1000:8.1f} ms"
+        f"   ~{workers}x worker peak {_fmt_mb(worker_peak)}"
+    )
+    click.echo(f"  speedup: {speedup:.2f}x")
+    click.echo("")
+
+    # Recommend on time (reliably measured); memory is a caveat, not the driver.
+    if speedup >= 1.15:
+        click.echo(f"Recommendation: parallel is {speedup:.2f}x faster on this tree. Enable it:")
+        click.echo("")
+        click.echo("    [tool.docpact]")
+        click.echo(f"    jobs = {workers}")
+        click.echo("")
+        click.echo(
+            f"  Memory: each worker is a separate process (~{workers}x resident memory). "
+            "Confirm that fits your CI before enabling."
+        )
+    else:
+        click.echo(
+            f"Recommendation: keep serial (jobs = 1). Parallel was only {speedup:.2f}x here — "
+            "the process-startup overhead isn't worth it for this tree."
         )
 
 

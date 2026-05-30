@@ -80,6 +80,7 @@ class Config:
     respect_gitignore: bool = True
     require_examples_min_tier: int | None = None
     registry: RegistryConfig = field(default_factory=RegistryConfig)
+    jobs: int = 1  # parallel worker processes; 1 = serial (default), 0 = auto (all cores)
 
 
 _SEVERITY_MAP: dict[str, Severity] = {
@@ -210,6 +211,14 @@ def _parse_section(raw: dict[str, object]) -> Config:
 
     registry = _parse_registry(raw["registry"]) if "registry" in raw else RegistryConfig()
 
+    jobs: int = 1
+    if "jobs" in raw:
+        v = raw["jobs"]
+        # bool is an int subclass; reject it explicitly so jobs = true is an error.
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise ConfigError("jobs: must be a non-negative integer (0 = auto, 1 = serial)")
+        jobs = v
+
     return Config(
         schema=schema,
         docstring_format=docstring_format,
@@ -225,6 +234,7 @@ def _parse_section(raw: dict[str, object]) -> Config:
         respect_gitignore=respect_gitignore,
         require_examples_min_tier=require_examples_min_tier,
         registry=registry,
+        jobs=jobs,
     )
 
 

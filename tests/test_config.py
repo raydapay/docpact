@@ -483,3 +483,42 @@ def test_registry_not_a_table(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nregistry = "nope"\n')
     with pytest.raises(ConfigError, match="registry"):
         load_config(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# jobs (parallelism) — ADR-006 item 5
+# ---------------------------------------------------------------------------
+
+
+def test_jobs_defaults_to_serial(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC"]\n')
+    assert load_config(tmp_path).config.jobs == 1
+
+
+def test_jobs_explicit_value(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[tool.docpact]\njobs = 8\n")
+    assert load_config(tmp_path).config.jobs == 8
+
+
+def test_jobs_zero_means_auto(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[tool.docpact]\njobs = 0\n")
+    assert load_config(tmp_path).config.jobs == 0
+
+
+def test_jobs_negative_rejected(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[tool.docpact]\njobs = -2\n")
+    with pytest.raises(ConfigError, match="jobs"):
+        load_config(tmp_path)
+
+
+def test_jobs_bool_rejected(tmp_path: Path) -> None:
+    # bool is an int subclass; jobs = true must not be silently accepted as 1.
+    (tmp_path / "pyproject.toml").write_text("[tool.docpact]\njobs = true\n")
+    with pytest.raises(ConfigError, match="jobs"):
+        load_config(tmp_path)
+
+
+def test_jobs_non_integer_rejected(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact]\njobs = "many"\n')
+    with pytest.raises(ConfigError, match="jobs"):
+        load_config(tmp_path)
