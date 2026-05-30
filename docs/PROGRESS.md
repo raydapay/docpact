@@ -389,7 +389,15 @@ All four priorities delivered. See "Recent changes (post-v0.2)" above for detail
    be wrong). ty cannot catch this; it checks type consistency, not default-value
    prose consistency.
 
-### MCP-REG cluster — postponed, outline below
+### MCP-REG cluster — partially resolved by ADR-005 (2026-05-30)
+
+**Update:** The *same-file* case is now decided — see ADR-005 (Accepted). The
+postponement below conflated two axes: schema *dialect* (cheap) and *locality*
+(the only hard axis). Same-file tool registries need no cross-file resolution and
+are in scope (new `REG` namespace: REG001 phantom-param, REG002 unmatched-entry,
+plus a Tier 3 floor from registry membership). Cross-file registration — the
+imported-function pattern below — remains out of scope and still needs the
+module-graph decision. The original outline is kept for that cross-file case:
 
 The recon team proposed cross-file rules that validate MCP tool registration
 consistency: ToolSpec fields ↔ docstring Args, ToolSpec.description ↔ docstring

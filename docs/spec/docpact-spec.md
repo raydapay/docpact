@@ -1,8 +1,8 @@
 # docpact — Specification
 
-**Version:** 0.3.4  
+**Version:** 0.4.0  
 **Status:** Active — v0.1 complete, v0.2 complete, v0.3 complete  
-**Last revised:** 2026-05-21
+**Last revised:** 2026-05-30
 
 ---
 
@@ -512,6 +512,23 @@ Tier assignment is deterministic. Rules are evaluated in order; the first match 
 6. **`@property`, `@cached_property`, `@staticmethod`, `@classmethod` decorators** → inherit the tier of the containing class. The property/method-class decorator does not change tier.
 7. **All other public functions and methods** → Tier 2.
 
+#### Tier 3 floor from tool-registry membership (ADR-005)
+
+After the ordered rules above assign a tier `t`, a **Tier 3 floor** is applied: if the function is named by a tool-registry entry **in the same file** (the `REG` namespace; configured via `[tool.docpact.registry]`, §15.1), its tier becomes `max(3, t)`.
+
+A registry entry — a `ToolDefinition(name="f", ...)` constructor or a `{"name": "f", ...}` dict literal in a module-level list — is the data-structure equivalent of an `@mcp.tool` decorator: the same "this function is agent-facing" signal. The floor exists so the two registration styles are held to the same documentation standard.
+
+The floor is a **minimum, not a fixed value** — this is deliberately different from the `@mcp.tool` rule (rule 1), which returns Tier 3 unconditionally:
+
+- An explicit `per-file-tier = 1` on the file **does not** lower a registered tool below Tier 3 — the floor overrides the downgrade.
+- A `per-file-tier = 4` (e.g. a registered tool that is also a FastAPI route) **does** raise it to 4 — the floor does not cap.
+
+The floor is overridable three ways:
+
+- **Per function** — `# docpact: tier=N` pragma (requires `allow_pragma = true`), including lowering below 3. The pragma is applied after tier assignment, so it overrides the floor.
+- **Per file** — `[tool.docpact.registry] no_tier_floor = ["glob", ...]`. Matching files are still detected and `REG` rules still run, but no tier floor is applied. Globs are anchored to the project root, the same convention as `per-file-tier`.
+- **Per project** — `[tool.docpact.registry] assign_tier = false` (default `true`). Disables the floor everywhere while leaving registry detection and `REG` rules active.
+
 ### 10.2 Tier 1 — Internal functions
 
 **Required:** Summary only.
@@ -887,6 +904,22 @@ HEUR001 = "off"
 "src/public_api.py" = 2
 "src/routes.py" = 4
 
+# Tool-registry detection (REG namespace; ADR-005). Cross-checks same-file
+# tool-registration entries against the functions they name.
+[tool.docpact.registry]
+# Constructor class name(s) to treat as registry entries. Raw dict literals
+# ({"name": ..., "description": ..., "parameters": {...}}) are always recognized.
+tool_definition_class = ["ToolDefinition"]
+# Field names within each entry. Defaults shown.
+name_field = "name"
+description_field = "description"
+parameters_field = "parameters"
+# Registry membership applies a Tier 3 floor (§10.1). Set false to disable the
+# floor project-wide; detection and REG rules still run.
+assign_tier = true
+# Globs (project-root-anchored) where the Tier 3 floor is not applied.
+no_tier_floor = ["src/legacy/**"]
+
 # Pydantic field documentation severity.
 [tool.docpact.pydantic]
 undescribed_fields = "warning"  # error | warning | off
@@ -945,10 +978,18 @@ Bare suppression without codes emits `FIX001`. Suppression with codes but withou
 | `FIX` | Fix-mode diagnostics | v0.1 |
 | `TY` | Annotation/docstring contradiction rules | v0.1 |
 | `PARSE` | Parse-time error rules (file cannot be parsed at all) | post-v0.3 |
+| `REG` | Tool-registry consistency rules (same-file `ToolDefinition`/dict registries) | post-v0.3 (ADR-005) |
 | `HEUR` | Heuristic rules | v0.2 (namespace allocated v0.1; no rules yet) |
 | `SEM` | Semantic mode findings | Deferred (experimental) |
 
 `PARSE` rules fire before any structural or function-level checks. If a `PARSE` rule fires for a file, all other checks for that file are skipped — structural analysis requires a valid AST. By default the `PARSE` namespace is selected (same as `DOC`, `MCP`); add `PARSE001` to `[tool.docpact.per-file-ignores]` to silence it for generated or vendored files.
+
+`REG` rules (ADR-005) cross-check tool-registration entries against the functions they name, **within a single file**. They never resolve symbols across modules — cross-file registration (a function imported into a central registry module) is out of scope, and an entry whose `name` matches no function in the file is treated as out of scope, not chased. Only statically-evaluable entries are checked (a `parameters` built by a helper call is skipped, the same literals-only discipline as DOC021):
+
+- **`REG001`** (error, all tiers): a `parameters.properties` key names a parameter absent from the matched function's signature — the phantom-parameter case (cf. DOC007) lifted from the docstring `Args:` section to the JSON Schema.
+- **`REG002`** (info, **off by default**): a registry entry's `name` matches no function in the file. Opt in with `--extend-select REG002` to audit registry coverage; `# nodo:`-suppressible like any rule.
+- **`REG003`** *(reserved, not shipped)*: signature parameter absent from the registry schema. Deferred — deliberate non-exposure of a parameter is legitimate and would produce false positives.
+- **`REG050`** *(reserved, not shipped — out of scope)*: registry `description` diverges from the docstring summary. This requires judging whether two free-text strings mean the same thing; any similarity heuristic reproduces the DOC051 false-positive failure mode. docpact enforces structure, not meaning — this ships only behind a precise, non-heuristic detector, which does not exist. Per-parameter `properties[*].description` text is likewise unenforceable structurally and out of scope.
 
 Error codes with `[*]` suffix indicate a fix is available.
 
