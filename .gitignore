@@ -41,3 +41,9 @@ Thumbs.db
 
 # uv
 .python-version
+
+# Local secrets (GitHub Models PAT for the semantic spike, etc.)
+.env
+
+# Private adopter code dropped in for one-off spike testing — never commit.
+bot_tools_to_test.py
