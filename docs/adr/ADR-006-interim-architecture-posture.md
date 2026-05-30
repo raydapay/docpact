@@ -105,12 +105,69 @@ There is not even a single break-even number per project, so any hardcoded thres
 
 ## Revisit triggers
 
-1. **ty formalizes a stable public plugin / semantic-model API.** Re-evaluate consuming it (Alternative D → chosen). This is the primary trigger; re-check at each ty release that touches plugins or an exposed semantic model.
+1. **ty formalizes a stable public plugin / semantic-model API.** Re-evaluate consuming it (Alternative D → chosen). This is the primary trigger; re-check at each ty release that touches plugins or an exposed semantic model. The first thing to scope against it is the projected use case below.
 2. **Cross-file tool-contract checking is proven acutely needed by real adopters** *before* trigger 1 fires. Reopen Alternative C (griffe deep mode) as a documented experimental mode.
 3. **Field evidence (via `docpact bench` across real adopter projects) shows parallel is reliably beneficial above a knowable size.** Reconsider whether `jobs` should default to auto rather than off. Until then it stays opt-in.
 4. **Python free-threading becomes mainstream and supported on the version floor.** Revisit the *parallelism implementation* (processes → threads, via the abstracted executor) — NOT the per-file scope.
 5. **A Rust rewrite is reconsidered only if** triggers 1–2 establish cross-file as essential AND ty proves not consumable AND Rust capacity exists. Absent all three, Alternative A stays closed.
 6. **The griffe `<2.0` pin forces a migration, griffe goes unmaintained, or a profiler shows docstring parsing has become a material share of runtime.** Then reopen the keep-vs-reimplement question (item 6) — at that point the reimplementation's relative cost has changed.
+
+## Projected ty-integration use case (logged demand, 2026-05-30)
+
+Recorded so that when trigger 1 fires, the first cross-file capability to scope is
+concrete, not abstract. From an adopter request (FR-1/FR-2):
+
+**Pattern.** Tool registration where the input contract is a *named Pydantic model*
+and the human-facing `Args:` block lives in the registration's description string —
+not in loose function parameters:
+
+```python
+# schemas.py
+class SearchTransactionsInput(BaseModel):
+    source: Literal["payment", "payout"] = Field(description="...")
+    limit: int = Field(default=50, ge=1, le=200, description="...")
+
+# registry.py  (imports the model and the handler)
+register_tool(ToolSpec(
+    name="search_transactions",
+    description="""Search transactions.\n\nArgs:\n    source: ...\n    limit: ...""",
+    input_model=SearchTransactionsInput,        # imported from schemas.py
+    service_function=search_transactions,        # imported from service.py
+))
+```
+
+**Wanted (the killer app):** bidirectional parity between the `Args:` block and the
+model's fields — every field documented, every documented arg a real field — i.e.
+DOC007 lifted to model fields; plus extending the "description present" check to
+require the field also appear in `Args:`. This is what would let the adopter **delete
+a bespoke per-tool contract test.**
+
+**Why it is ty-gated, not buildable now.** The model and handler are *imported* from
+other modules; only the `Args:` string is local. Correlating the registration against
+the model's fields requires resolving those imports — the module graph this ADR vetoes
+building by hand and routes to ty. The adopter's goal ("replace our contract test") is
+*inherently cross-file*: that test imports model, description, and handler from three
+modules and asserts they agree. **A per-file linter cannot replace a cross-file test by
+construction** — only a ty-backed docpact can. (Were the model same-file, ADR-005's
+REG machinery would already cover it; "imported" is the whole reason it waits.)
+
+**Explicitly NOT part of this, regardless of ty:** "constraint surfaceability" —
+checking that `Field(ge=, le=, pattern=)` / `Literal[...]` members are *reflected in
+the prose*. That is the DOC051 / REG050 semantic-content trap (false-positive class);
+out of scope on principle even with cross-file resolution. The structural shadow
+(field has a constraint AND a non-empty description) is just DOC050.
+
+**Available to the adopter today (per-file slices, not the ask):** DOC050 (every
+`Field` needs a description) and DOC003 on `schemas.py`; DOC007/DOC012 on the handler's
+own docstring↔signature in `service.py`. The cross-file correlation stays in their
+contract test until docpact is ty-backed.
+
+**Companion ask (FR-2):** auto-derive the Tier-3 floor / REG detection from *imperative*
+`register_tool(ToolSpec(...))` call statements (not only `TOOLS = [...]` list literals).
+The extraction is a clean same-file addition in the abstract, but **inert for this
+adopter** because their entries name imported handlers — there is no same-file `def` to
+floor. Build only if a same-file imperative-registration codebase appears; it does not
+help the imported-everything layout.
 
 ## References
 
