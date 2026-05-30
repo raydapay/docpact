@@ -58,6 +58,77 @@ showing docstring parsing has become material. See ADR-006 for full why/why-not.
 
 ---
 
+## Planned: cross-file analysis via LSP (`docpact[crossfile]`) — ADR-009
+
+**Decided (ADR-009), not yet built.** Opt-in, provider-agnostic, LSP-backed cross-file
+resolution → FR-1 (Args block ↔ imported Pydantic model fields parity) and FR-2(b)
+(imported-handler correlation). Deterministic, static (server resolves without
+executing), server-swappable. The default per-file `check` stays offline and unchanged.
+
+**Reuse (don't reinvent):** `scripts/spike_lsp.py` is working LSP-client code (framing,
+JSON-RPC, handshake, `textDocument/definition`, re-export resolution — all proven) →
+graduate it. `src/docpact/semantic/backend.py` is the provider-agnostic-protocol +
+factory pattern to mirror. `doc050_pydantic_field.py` has the Pydantic field-walk to
+reuse. The docstring parser parses the `Args:` block. REG already extracts registry
+entries.
+
+**Cross-cutting invariants (do not violate):**
+- **No real LSP server in CI.** All tests mock the server (a fake stdio JSON-RPC peer).
+  ty/any server is a *runtime* opt-in dep, never a `make verify` dependency — `check`
+  stays offline and deterministic.
+- **Strictly opt-in.** Cross-file runs only when enabled AND a server is available;
+  the default `check` is untouched. Graceful degradation (server missing/old → clear
+  error or skip, never crash).
+- **Run `make verify` before the final commit** (it writes — stats/docs), per the
+  Definition of done.
+
+### Step 1 — LSP client layer (graduate the spike)
+- **Build:** `src/docpact/lsp/client.py` — provider-agnostic `LSPClient` (context
+  manager): spawn the configured server, `initialize`/`initialized`, `didOpen`,
+  `definition(file, line, char) -> list[Location]` normalizing `Location` |
+  `LocationLink`, clean `shutdown`/`exit`; raise `LSPError` on missing server / timeout
+  / bad response. `[tool.docpact.lsp]` config (`server` cmd, default `["ty","server"]`;
+  `timeout`) → `LspConfig` in `config.py`.
+- **Exit:** resolves a definition against a *fake* in-process server in tests; missing
+  server → `LSPError`; `make verify` green (new code dogfood-clean + covered); zero
+  real-server use in CI.
+
+### Step 2 — REG extraction extension (capture model ref + description Args)
+- **Build:** extend tool-registry extraction to also capture, per entry, the
+  `input_model` symbol *reference + source position* (for LSP) and the description
+  string's `Args:` keys (via the docstring parser). Backward-compatible; literals/Name
+  only (skip dynamic).
+- **Exit:** entries carry the new fields when present; all existing REG tests pass
+  unchanged; new extraction unit tests.
+
+### Step 3 — FR-1 cross-file parity rule
+- **Build:** an opt-in cross-file pass: for an entry whose `input_model` is imported,
+  `LSPClient.definition` → defining file → AST-extract the model's fields (reuse DOC050)
+  → compare bidirectionally to the entry's `Args:` keys → emit findings. Deterministic.
+- **Decisions to make here (flag):** (a) **code/namespace** — REG-continuation (e.g.
+  REG010) vs a new `XF` namespace; (b) **invocation** — `docpact check --crossfile`
+  flag vs a separate subcommand. Recommend: new code in REG family + `--crossfile` opt-in
+  on `check` (deterministic → belongs with check, gated by flag + server availability).
+- **Exit:** parity fires on a two-file fixture (match / missing-in-doc / missing-in-model)
+  driven by a *fake* LSP server; opt-in; `make verify` green.
+
+### Step 4 — packaging + docs
+- **Build:** `docpact[crossfile]` extra (optional server dep); README + ADOPTING
+  cross-file section (`[tool.docpact.lsp]`, server-swappable note, opt-in/perf caveats);
+  spec status + new rule in §15.3; `make docs` for the new rule doc.
+- **Exit:** docs current; `list-rules` shows the new code; `make verify` green.
+
+### Step 5 — FR-2(b) handler correlation + cross-file Tier-3 floor (follow-on; flagged hard)
+- The Tier-3 floor for an *imported* handler is reverse-direction (it needs registry
+  knowledge while checking the handler's *own* file) — genuinely harder than FR-1.
+  Scope after FR-1 ships and proves out. Don't bundle it into Steps 1–4.
+
+**Sequencing:** each step is independently shippable and non-breaking — Step 1 ships
+unused, Step 2 is backward-compatible, Step 3 is the opt-in rule, Step 4 is docs.
+Delete `scripts/spike_lsp.py` (and `spike_semantic.py`) once the respective feature lands.
+
+---
+
 ## Recent changes (post-v0.3)
 
 ### Semantic layer (SEM) opened — 2026-05-30
