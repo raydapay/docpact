@@ -43,7 +43,7 @@ def check(
     if doc is None:
         return []
 
-    min_tier = config.options.get("require_examples_min_tier")  # ty: ignore[invalid-argument-type]
+    min_tier = config.options.get("require_examples_min_tier")
     if min_tier is None:
         return []
 
