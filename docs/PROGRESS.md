@@ -10,9 +10,10 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
-DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002.
+DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001.
 DOC051 (Annotated constraint dup) and DOC098 (doctest) reserved/deferred.
-REG is opt-in. (Run `docpact list-rules` for the authoritative current set.)
+REG and SEM are opt-in; SEM001 is advisory via `docpact semantic` (ADR-008).
+(Run `docpact list-rules` for the authoritative current set.)
 
 No active milestone.
 
@@ -58,6 +59,29 @@ showing docstring parsing has become material. See ADR-006 for full why/why-not.
 ---
 
 ## Recent changes (post-v0.3)
+
+### Semantic layer (SEM) opened — 2026-05-30
+
+ADR-008. A spike (`scripts/spike_semantic.py`, GitHub Models) validated the LLM
+signal: 26/26 well-documented real agent tools verdict "good" (no false positives);
+planted cargo-cult/hidden-contract caught. So the long-deferred semantic mode is now
+active, scoped to what the spike proved.
+
+- **`SEM001`** — weak/empty docstring (cargo-cult, hidden contract, empty Returns).
+  The DOC051/REG050 *intent* delivered in the advisory layer; DOC051/REG050 stay
+  reserved/deterministic (not revived).
+- **`docpact semantic`** command — opt-in, advisory, **separate from `check`** (never
+  in `make verify`/dogfood, so `check` stays deterministic and offline). `--dry-run`
+  prints prompts and sends nothing; `--min-tier` scopes (default 3); `--exit-zero`.
+- **Pluggable backend** (`docpact.semantic.backend`): `LLMBackend.complete(system,
+  user) -> str` protocol + factory. One adapter ships — `OpenAICompatBackend` (GitHub
+  Models, OpenAI, OpenRouter, Azure, local Ollama/vLLM). Gemini/Anthropic-native = one
+  new adapter class, no analyzer/CLI change. Stdlib `urllib` only (no new dep).
+- **`[tool.docpact.semantic]`** config: backend, model, api_base, api_key_env, min_tier.
+- Analyzer reuses `FunctionInfo` + the diagnostic model + output formatters; findings
+  are `RuleResult` (code SEM001) so text/JSON output and `list-rules` work unchanged.
+- 22 tests (config, backend via mocked urlopen, analyzer via FakeBackend, CLI incl.
+  dry-run); no network in tests. GitHub Models = free on-ramp; BYOK to scale.
 
 ### tokenize-based suppression scanner — 2026-05-19
 
@@ -353,7 +377,10 @@ Commits: `db3ae18`, `4c5c8f1`
 - **HEUR rules** — threshold for "bad" vs. "concise" has no concrete spec. Dropped until real demand surfaces.
 - **Sphinx/RST docstring parser** — no demand. Infrastructure ready when needed.
 - **Third-party rule plugin API** — premature; internal rules only.
-- **Semantic mode** (`SEM` namespace) — LLM-based analysis. No timeline.
+- **Semantic mode** (`SEM` namespace) — ~~LLM-based analysis. No timeline.~~
+  **Opened 2026-05-30 (ADR-008)** after a spike validated the LLM signal. SEM001
+  (weak/empty docstring) ships via `docpact semantic`, advisory, with a pluggable
+  LLM backend. See the "Semantic layer opened" entry above.
 - **DOC098** (doctest exception) — **explicitly out of scope, not merely deferred.**
   Executing docstring Examples sections has arbitrary side effects. No safe
   sandboxing strategy exists for a structural linter. The rule stub remains in

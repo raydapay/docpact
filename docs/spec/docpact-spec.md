@@ -1,6 +1,6 @@
 # docpact — Specification
 
-**Version:** 0.4.1  
+**Version:** 0.4.2  
 **Status:** Active — v0.1 complete, v0.2 complete, v0.3 complete  
 **Last revised:** 2026-05-30
 
@@ -157,9 +157,9 @@ This specification describes the complete system. Not all of it ships in v0.1. T
 - Structural mode (deterministic checks only)
 - Google and NumPy docstring parsers (`format = "google"` or `"numpy"`)
 - Tiers 1, 2, 3 (Tier 4 partial: explicit configuration only, no detection)
-- Rule namespaces with rules: `DOC`, `MCP`, `FIX`, `TY`, `PARSE`, `REG`
+- Rule namespaces with rules: `DOC`, `MCP`, `FIX`, `TY`, `PARSE`, `REG`, `SEM` (advisory)
 - Rule namespace allocated, no rules yet: `HEUR`
-- Commands: `check`, `check --fix`, `check --unsafe-fixes`, `generate`, `bench`, `show-schema`, `list-rules`
+- Commands: `check`, `check --fix`, `check --unsafe-fixes`, `generate`, `bench`, `semantic`, `show-schema`, `list-rules`
 - Configuration via `pyproject.toml` and `docpact.toml`
 - Inline suppression via `# nodo: CODE -- reason` (configurable via `suppress_comment`)
 - Pre-commit integration
@@ -642,11 +642,22 @@ Operates on source files via AST and docstring parsing. No imports, no network a
 
 **Dependencies:** Python AST, griffe.
 
-### 12.2 Semantic mode (designed; not in v0.1)
+### 12.2 Semantic mode (active — ADR-008; SEM001 ships)
 
-Invoked via `docpact semantic`. Never runs as part of `docpact check`. Requires explicit invocation and configured LLM credentials. Designed for scheduled CI runs (weekly, nightly) — not pre-commit, not a blocking merge gate by default.
+Invoked via `docpact semantic`. **Never runs as part of `docpact check`** — so
+`check` stays deterministic and offline. Requires explicit invocation and configured
+LLM credentials. Advisory and non-deterministic; designed for scheduled CI / pre-merge
+review, not pre-commit, not a blocking gate by default.
 
-Emits `SEM`-namespaced `RuleResult` objects through the standard rule pipeline. Suppression (`# nodo: SEM001 -- reason`), severity configuration, `--changed-only`, and `--sample-rate` all work identically to structural mode.
+Emits `SEM`-namespaced `RuleResult` objects through the standard output formatters.
+**Shipped (ADR-008):** `SEM001` (weak/empty docstring — cargo-cult, unsurfaced
+precondition/constraint, empty Returns); the `--dry-run`, `--min-tier`, `--format`,
+and `--exit-zero` options; and a **pluggable LLM backend** (`LLMBackend.complete`
+protocol + factory; one `openai-compat` adapter covering GitHub Models / OpenAI /
+local servers, with other providers added as adapter classes). **Designed, not yet
+built:** `--sample-rate`, `--changed-only`, module-level scans, and `finding_threshold`
+(spec §15.1). The DOC051/REG050 *intent* (constraint surfacing) is delivered here as
+SEM001; those deterministic codes stay reserved.
 
 #### Two scan modes
 
@@ -985,7 +996,7 @@ Bare suppression without codes emits `FIX001`. Suppression with codes but withou
 | `PARSE` | Parse-time error rules (file cannot be parsed at all) | post-v0.3 |
 | `REG` | Tool-registry consistency rules (same-file `ToolDefinition`/dict registries) | post-v0.3 (ADR-005) |
 | `HEUR` | Heuristic rules | v0.2 (namespace allocated v0.1; no rules yet) |
-| `SEM` | Semantic mode findings | Deferred (experimental) |
+| `SEM` | Semantic (LLM-judged) findings; advisory, via `docpact semantic` | post-v0.3 (ADR-008); SEM001 ships |
 
 `PARSE` rules fire before any structural or function-level checks. If a `PARSE` rule fires for a file, all other checks for that file are skipped — structural analysis requires a valid AST. By default the `PARSE` namespace is selected (same as `DOC`, `MCP`); add `PARSE001` to `[tool.docpact.per-file-ignores]` to silence it for generated or vendored files.
 

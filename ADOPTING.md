@@ -168,6 +168,12 @@ registry (the `REG` Tier-3 floor), or `per-file-tier = 3` on the tools module.
   per-file pieces: field descriptions present (DOC050), a required Examples block
   (DOC052), and the function's own docstring↔signature parity (DOC007/DOC012).
 
+For *meaning* (is a tool docstring actually informative, or cargo-cult? does it surface
+its preconditions?), there's an opt-in, advisory `docpact semantic` (SEM001) — an
+LLM-backed check, separate from `check`, with a pluggable backend (GitHub Models is a
+free on-ramp). It's non-deterministic, so it never gates `check`. See the README's
+"Semantic mode" section and ADR-008.
+
 ---
 
 ## Tuning for your repo

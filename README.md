@@ -49,7 +49,18 @@ docpact check src/ --jobs 0           # parallel analysis across all cores (0=au
 docpact generate src/                 # insert stub docstrings for undocumented functions
 docpact list-rules                    # list all rules with severity and fixability
 docpact bench src/                    # measure serial vs parallel on your tree; recommends a jobs value
+docpact semantic src/ --dry-run       # LLM-backed meaning check (advisory); --dry-run shows prompts, no API call
 ```
+
+### Semantic mode (`docpact semantic`)
+
+Opt-in, advisory, and separate from `check` (so `check` stays deterministic and
+offline). It uses an LLM to flag what structure can't — cargo-cult docstrings, a
+precondition/constraint implied but not surfaced, an empty Returns. Configure a
+backend under `[tool.docpact.semantic]`; the LLM layer is pluggable
+(OpenAI-compatible ships — GitHub Models, OpenAI, local Ollama/vLLM — and other
+providers are added as adapters). `--dry-run` prints the exact prompts and sends
+nothing. See [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
 
 ## What it checks
 
@@ -61,6 +72,7 @@ docpact bench src/                    # measure serial vs parallel on your tree;
 | `FIX` | FIX001–FIX004 | Suppression hygiene: bare suppression comments, missing `-- reason`, stale suppressions, misplaced suppression comments |
 | `PARSE` | PARSE001 | Parse-time errors: file contains a Python syntax error and cannot be checked; fires before all other rules |
 | `REG` *(opt-in)* | REG001–REG002 | Tool-registry consistency: a same-file `ToolDefinition`/dict registry whose JSON-Schema parameter is absent from the function signature. Add `REG` to `select` to enable. |
+| `SEM` *(opt-in, advisory)* | SEM001 | Meaning, not structure: LLM-judged cargo-cult restatement, an unsurfaced precondition/constraint, an empty Returns. Run via `docpact semantic` — never part of `check`; non-deterministic and advisory. |
 
 Full rule documentation: [`docs/rules/`](docs/rules/).
 
@@ -129,6 +141,14 @@ jobs = 1                         # parallel workers; 1 = serial (default), 0 = a
 tool_definition_class = ["ToolDefinition"]   # constructor name(s); flat dict literals also recognized
 # assign_tier = true                         # registry membership → Tier 3 floor (default)
 # no_tier_floor = ["src/legacy/**"]          # files where the floor is not applied
+
+# Opt-in: advisory LLM semantic check (`docpact semantic`). Pluggable backend.
+[tool.docpact.semantic]
+backend = "openai-compat"                    # OpenAI-compatible: GitHub Models, OpenAI, Ollama, vLLM…
+model = "openai/gpt-4o-mini"
+api_base = "https://models.github.ai/inference"   # e.g. GitHub Models (free to try)
+api_key_env = "GITHUB_TOKEN"                 # name of the env var holding the key — never the key
+# min_tier = 3                               # scope to agent-facing tools (default 3)
 ```
 
 Inline suppression goes on the `def` keyword line:
@@ -190,7 +210,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 Self-hosting: `docpact` validates its own source on every commit. 909 tests, 94% coverage.
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002.
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 
 ## Documentation
 
