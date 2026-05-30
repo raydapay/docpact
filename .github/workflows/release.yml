@@ -45,10 +45,17 @@ jobs:
       - name: Build
         run: uv build --no-sources
 
+      # PyPI publishing is opt-in. Set repository variable PUBLISH_TO_PYPI="true"
+      # (Settings → Secrets and variables → Actions → Variables) once a PyPI
+      # trusted publisher is configured for this repo/workflow/environment.
+      # Until then, releases are GitHub-only — the build artifacts are still
+      # attached to the GitHub Release below.
       - name: Validate publish artifacts
+        if: vars.PUBLISH_TO_PYPI == 'true'
         run: uv publish --dry-run
 
       - name: Publish to PyPI
+        if: vars.PUBLISH_TO_PYPI == 'true'
         run: uv publish
 
       - name: Generate release notes
