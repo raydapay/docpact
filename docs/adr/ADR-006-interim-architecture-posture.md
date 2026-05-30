@@ -29,6 +29,7 @@ An **interim posture**, explicitly time-bounded by the revisit triggers below:
 3. **Cross-file capability: deferred entirely until ty.** No hand-rolled resolver. The griffe-backed opt-in "deep mode" (cross-file via griffe's static loader) is **deferred/rejected-for-now** — see Alternative C.
 4. **Strategic target: ty.** When ty formalizes a stable public plugin / semantic-model API, docpact's preferred cross-file path is to *consume* it, not to build resolution itself. This is the north star; it is "not yet," not "no."
 5. **Parallelism: implemented now, opt-in, default off.** Per-file independence makes parallel analysis sound today (issue #4). Shipped as a `jobs` setting (`--jobs` / `[tool.docpact] jobs`), default `1` (serial). The break-even between serial and parallel is a property of the *user's* project size, file complexity, core count, and OS (fork vs spawn) — **not** a property docpact can benchmark or threshold for them. So docpact ships a `docpact bench` command that measures wall-time and memory on the user's own tree and emits a copy-pasteable `jobs` recommendation. Measuring beats guessing. The dispatch is executor-abstracted so `ProcessPoolExecutor` → `ThreadPoolExecutor` is a one-line swap when free-threading lands.
+6. **Docstring parsing: keep griffe; do not reimplement.** griffe stays the Google/NumPy section parser. It is one of three runtime deps, isolated to one file behind the `DocstringParser` Protocol, but we use only ~6% of its surface, via an `_internal` import, pinned `<2.0`. The reimplementation question (pure-Python, or a Rust state machine for the indentation block-reader) was settled by measurement: docstring parsing is **~3% of runtime** (PROGRESS.md "Performance baseline"; hot paths are the rule loop at 68% and AST extraction at 22%). With no perf basis, reimplementation isn't worth ~200 LOC + regression risk on a hardened parser; a Rust extension is a clearly bad trade (optimizes 3% at the cost of the full compiled-wheel distribution apparatus — and the cleanly-FFI-extractable component is *not* the slow one). Kept behind the Protocol, so it's cheaply reversible.
 
 Supporting principle (free insurance for item 4): **keep rule logic ruthlessly separated from the parsing/resolution substrate.** docpact already enforces this — rules are pure functions of model types; only the parser touches `ast`/griffe. Any rule reaching past the model layer is a bug. This separation is what makes a future substrate swap (own parser, ty-backed, or Rust) a contained change rather than a rewrite.
 
@@ -99,7 +100,7 @@ There is not even a single break-even number per project, so any hardcoded thres
 
 ### Neutral
 
-- **griffe removal from the default docstring parser** — *superseded by ADR-007 (2026-05-30): griffe stays; reimplementation is not justified.* Measurement showed docstring parsing is ~3% of runtime, so the removal had no performance basis and the dependency-hygiene benefit did not outweigh the cost/risk. The `DocstringParser` Protocol keeps the decision cheaply reversible. (Originally framed here as a desired-but-unscheduled task; that framing is withdrawn.)
+- **griffe stays** (item 6) at the cost of carrying a dependency we use ~6% of, via an `_internal` import pinned `<2.0` — so a griffe 2.0 is a future forced migration, and the ~200 LOC of griffe→`ParsedDocstring` adapter glue remains. Accepted as cheaper than reimplementing at 3% of runtime; the `DocstringParser` Protocol keeps it reversible.
 - The supporting separation principle is already an invariant, so adopting it formally costs nothing today.
 
 ## Revisit triggers
@@ -109,6 +110,7 @@ There is not even a single break-even number per project, so any hardcoded thres
 3. **Field evidence (via `docpact bench` across real adopter projects) shows parallel is reliably beneficial above a knowable size.** Reconsider whether `jobs` should default to auto rather than off. Until then it stays opt-in.
 4. **Python free-threading becomes mainstream and supported on the version floor.** Revisit the *parallelism implementation* (processes → threads, via the abstracted executor) — NOT the per-file scope.
 5. **A Rust rewrite is reconsidered only if** triggers 1–2 establish cross-file as essential AND ty proves not consumable AND Rust capacity exists. Absent all three, Alternative A stays closed.
+6. **The griffe `<2.0` pin forces a migration, griffe goes unmaintained, or a profiler shows docstring parsing has become a material share of runtime.** Then reopen the keep-vs-reimplement question (item 6) — at that point the reimplementation's relative cost has changed.
 
 ## References
 
@@ -116,4 +118,6 @@ There is not even a single break-even number per project, so any hardcoded thres
 2. ADR-005 — same-file tool-registry validation; the boundary this ADR generalizes into a direction
 3. Spec §8 (no-imports invariant), §13.2 (cross-module resolution open question)
 4. inbox issue #4 — parallelize file analysis (item 5)
-5. Salsa (incremental query engine; rust-analyzer / ty foundation); ruff per-file semantic model; ty (ex–Red Knot) cross-file architecture
+5. PROGRESS.md "Performance baseline (2026-05-30)" — the measurement behind item 6 (griffe = 3% of runtime)
+6. ADR-001 — why griffe was originally chosen (item 6 keeps it)
+7. Salsa (incremental query engine; rust-analyzer / ty foundation); ruff per-file semantic model; ty (ex–Red Knot) cross-file architecture
