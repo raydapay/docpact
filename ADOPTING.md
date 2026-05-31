@@ -105,6 +105,58 @@ pluggable — see ADR-008).
 
 ---
 
+## Cross-file checks (`--crossfile`, opt-in)
+
+If your tools register an **imported** Pydantic model as their `input_model` and
+also document those parameters in the description's `Args:` section, `REG010`
+checks that the documented args and the model's actual fields stay in parity —
+catching a field added to the model but never documented, or a documented arg
+that no longer exists. This is the cross-file complement to the same-file `REG`
+rules, and the declarative replacement for a hand-written "tool contract" test.
+
+It is **deterministic** (unlike `docpact semantic`), so it *can* gate CI — but it
+needs a language server to resolve imports, so it is off by default and runs only
+under `--crossfile`:
+
+```bash
+# install the bundled default server (ty), or use one you already have
+uv add "docpact[crossfile]"
+
+docpact check src/ --crossfile        # REG must also be in `select`
+```
+
+```toml
+[tool.docpact]
+select = ["DOC", "REG"]               # REG010 needs the REG namespace enabled
+
+[tool.docpact.lsp]
+server = ["ty", "server"]             # swappable: ["pyright-langserver", "--stdio"], ["pylsp"], …
+# timeout = 15.0                       # per-request / definition readiness budget (seconds)
+```
+
+Notes and caveats:
+
+- **Opt-in, doesn't touch the default `check`.** Without `--crossfile`, `check`
+  stays per-file, offline, and dependency-free.
+- **Graceful degradation.** A missing or failing server prints a clear note and
+  the run continues with the per-file results — it never crashes the build.
+- **Server-swappable, no lock-in.** `docpact` speaks the protocol, not a vendor;
+  change one config line to switch servers. See [ADR-009](docs/adr/ADR-009-cross-file-via-lsp.md).
+- **Heavier than per-file.** Per-symbol queries plus workspace indexing make it a
+  better fit for a dedicated CI step than a pre-commit hook on every save.
+- **Static.** The server resolves without executing your code; `docpact` still
+  never imports it.
+
+A blocking CI step looks like a normal `check` with the flag (and a server on
+`PATH`):
+
+```yaml
+- run: uv sync --extra crossfile
+- run: uv run docpact check src/ --crossfile
+```
+
+---
+
 ## Pre-commit integration
 
 ```yaml

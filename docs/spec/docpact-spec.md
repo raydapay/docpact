@@ -969,6 +969,13 @@ scan_modes = ["function"]
 # "missing": error only when a dimension verdict is "missing".
 # "weak":    warning on "weak", error on "missing".
 finding_threshold = "missing"
+
+# Cross-file analysis via an LSP server (ADR-009; docpact[crossfile]).
+# Used only by `docpact check --crossfile` (opt-in). Provider-agnostic:
+# any LSP-conformant server works — change the command to swap servers.
+[tool.docpact.lsp]
+server = ["ty", "server"]                  # default; e.g. ["pyright-langserver", "--stdio"]
+timeout = 15.0                              # seconds per request / definition readiness budget
 ```
 
 ### 15.2 Inline suppression
@@ -994,16 +1001,17 @@ Bare suppression without codes emits `FIX001`. Suppression with codes but withou
 | `FIX` | Fix-mode diagnostics | v0.1 |
 | `TY` | Annotation/docstring contradiction rules | v0.1 |
 | `PARSE` | Parse-time error rules (file cannot be parsed at all) | post-v0.3 |
-| `REG` | Tool-registry consistency rules (same-file `ToolDefinition`/dict registries) | post-v0.3 (ADR-005) |
+| `REG` | Tool-registry consistency rules (same-file `ToolDefinition`/dict registries; cross-file `REG010` via `--crossfile`) | post-v0.3 (ADR-005; cross-file ADR-009) |
 | `HEUR` | Heuristic rules | v0.2 (namespace allocated v0.1; no rules yet) |
 | `SEM` | Semantic (LLM-judged) findings; advisory, via `docpact semantic` | post-v0.3 (ADR-008); SEM001 ships |
 
 `PARSE` rules fire before any structural or function-level checks. If a `PARSE` rule fires for a file, all other checks for that file are skipped — structural analysis requires a valid AST. By default the `PARSE` namespace is selected (same as `DOC`, `MCP`); add `PARSE001` to `[tool.docpact.per-file-ignores]` to silence it for generated or vendored files.
 
-`REG` rules (ADR-005) cross-check tool-registration entries against the functions they name, **within a single file**. They never resolve symbols across modules — cross-file registration (a function imported into a central registry module) is out of scope, and an entry whose `name` matches no function in the file is treated as out of scope, not chased. Only statically-evaluable entries are checked (a `parameters` built by a helper call is skipped, the same literals-only discipline as DOC021):
+The same-file `REG` rules (ADR-005) cross-check tool-registration entries against the functions they name, **within a single file**; they never resolve symbols across modules, and an entry whose `name` matches no function in the file is treated as out of scope, not chased. Only statically-evaluable entries are checked (a `parameters` built by a helper call is skipped, the same literals-only discipline as DOC021). Cross-file checking is available separately and opt-in via `--crossfile` (`REG010`, below), which delegates import resolution to a language server (ADR-009) rather than building a module graph:
 
 - **`REG001`** (error, all tiers): a `parameters.properties` key names a parameter absent from the matched function's signature — the phantom-parameter case (cf. DOC007) lifted from the docstring `Args:` section to the JSON Schema.
 - **`REG002`** (info, **off by default**): a registry entry's `name` matches no function in the file. Opt in with `--extend-select REG002` to audit registry coverage; `# nodo:`-suppressible like any rule.
+- **`REG010`** (warning, **cross-file, opt-in via `--crossfile`**, ADR-009): a tool entry names an **imported** `input_model` and documents parameters in its description's `Args:` section, but the documented args and the model's fields are out of parity — a model field the Args omit, or a documented arg with no matching field. A language server (`[tool.docpact.lsp]`, default ty) resolves the model to its defining file; docpact then extracts the fields by its own static AST pass. Runs only when `REG` is selected and `--crossfile` is passed; a missing/failing server degrades gracefully. Deterministic with a pinned server.
 - **`REG003`** *(reserved, not shipped)*: signature parameter absent from the registry schema. Deferred — deliberate non-exposure of a parameter is legitimate and would produce false positives.
 - **`REG050`** *(reserved, not shipped — out of scope)*: registry `description` diverges from the docstring summary. This requires judging whether two free-text strings mean the same thing; any similarity heuristic reproduces the DOC051 false-positive failure mode. docpact enforces structure, not meaning — this ships only behind a precise, non-heuristic detector, which does not exist. Per-parameter `properties[*].description` text is likewise unenforceable structurally and out of scope.
 

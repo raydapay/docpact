@@ -33,6 +33,9 @@ The first error: `payments.py` was refactored from `amount` to `amount_cents` si
 pip install git+https://github.com/raydapay/docpact.git
 # or
 uv add git+https://github.com/raydapay/docpact.git
+
+# with the optional cross-file analysis extra (bundles a default LSP server)
+uv add "docpact[crossfile] @ git+https://github.com/raydapay/docpact.git"
 ```
 
 ## Usage
@@ -50,6 +53,7 @@ docpact generate src/                 # insert stub docstrings for undocumented 
 docpact list-rules                    # list all rules with severity and fixability
 docpact bench src/                    # measure serial vs parallel on your tree; recommends a jobs value
 docpact semantic src/ --dry-run       # LLM-backed meaning check (advisory); --dry-run shows prompts, no API call
+docpact check src/ --crossfile        # opt-in cross-file rules (REG010) via an LSP server
 ```
 
 ### Semantic mode (`docpact semantic`)
@@ -62,6 +66,28 @@ backend under `[tool.docpact.semantic]`; the LLM layer is pluggable
 providers are added as adapters). `--dry-run` prints the exact prompts and sends
 nothing. See [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
 
+### Cross-file mode (`--crossfile`)
+
+Opt-in, and off by default — the standard `check` is per-file, offline, and
+fast. `--crossfile` runs the `REG010` rule: for a tool-registry entry that names
+an **imported** `input_model` (a Pydantic model in another module) and documents
+its parameters in the description's `Args:` section, it checks that the two
+agree — flagging a model field the docs omit, or a documented arg with no
+matching field.
+
+Resolution is delegated to a language server over the standard Language Server
+Protocol — `docpact` asks it to resolve the imported symbol to its defining
+file, then does its own AST extraction (it never imports or executes your code).
+The server is **swappable**: ty is the default, but any LSP-conformant server
+(pyright, pylsp) works via `[tool.docpact.lsp] server`. Install the bundled
+default with the `crossfile` extra, or point at a server you already have.
+
+It runs only when both `REG` is in `select` and `--crossfile` is passed; a
+missing or failing server degrades gracefully (a clear note, the run continues).
+Per-symbol LSP queries plus workspace indexing make it heavier than the per-file
+pass — fitting for an opt-in CI step, not every keystroke. Deterministic with a
+pinned server. See [ADR-009](docs/adr/ADR-009-cross-file-via-lsp.md).
+
 ## What it checks
 
 | Namespace | Rules | What |
@@ -72,6 +98,7 @@ nothing. See [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
 | `FIX` | FIX001–FIX004 | Suppression hygiene: bare suppression comments, missing `-- reason`, stale suppressions, misplaced suppression comments |
 | `PARSE` | PARSE001 | Parse-time errors: file contains a Python syntax error and cannot be checked; fires before all other rules |
 | `REG` *(opt-in)* | REG001–REG002 | Tool-registry consistency: a same-file `ToolDefinition`/dict registry whose JSON-Schema parameter is absent from the function signature. Add `REG` to `select` to enable. |
+| `REG` *(opt-in, cross-file)* | REG010 | Cross-file: a tool entry's documented `Args:` out of parity with its **imported** `input_model` fields. Resolved via an LSP server; runs only under `docpact check --crossfile`. See below. |
 | `SEM` *(opt-in, advisory)* | SEM001 | Meaning, not structure: LLM-judged cargo-cult restatement, an unsurfaced precondition/constraint, an empty Returns. Run via `docpact semantic` — never part of `check`; non-deterministic and advisory. |
 
 Full rule documentation: [`docs/rules/`](docs/rules/).
@@ -149,6 +176,11 @@ model = "openai/gpt-4o-mini"
 api_base = "https://models.github.ai/inference"   # e.g. GitHub Models (free to try)
 api_key_env = "GITHUB_TOKEN"                 # name of the env var holding the key — never the key
 # min_tier = 3                               # scope to agent-facing tools (default 3)
+
+# Opt-in: cross-file analysis (REG010) via an LSP server. Used only by `check --crossfile`.
+[tool.docpact.lsp]
+server = ["ty", "server"]                    # any LSP-conformant server: ["pyright-langserver", "--stdio"], …
+# timeout = 15.0                             # seconds per request / definition readiness budget
 ```
 
 Inline suppression goes on the `def` keyword line:

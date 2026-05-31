@@ -138,6 +138,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+crossfile = [
+    { name = "ty" },
+]
 pytest = [
     { name = "pytest" },
 ]
@@ -159,8 +162,9 @@ requires-dist = [
     { name = "griffe", specifier = ">=1.5,<2.0" },
     { name = "pytest", marker = "extra == 'pytest'", specifier = ">=8.0" },
     { name = "rich", specifier = ">=13.9" },
+    { name = "ty", marker = "extra == 'crossfile'", specifier = ">=0.0.37" },
 ]
-provides-extras = ["pytest"]
+provides-extras = ["pytest", "crossfile"]
 
 [package.metadata.requires-dev]
 dev = [

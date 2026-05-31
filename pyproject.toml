@@ -31,6 +31,10 @@ dependencies = [
 [project.optional-dependencies]
 # pytest plugin for in-suite docstring contract validation. v0.2 target.
 pytest = ["pytest>=8.0"]
+# Cross-file analysis (ADR-009): an LSP-conformant language server resolves
+# imported symbols for the opt-in `check --crossfile` pass (REG010). ty is the
+# default; any LSP server (pyright, pylsp) works via [tool.docpact.lsp] server.
+crossfile = ["ty>=0.0.37"]
 
 [project.scripts]
 docpact = "docpact.cli:main"
