@@ -301,3 +301,16 @@ def test_semantic_backend_error_is_usage_error(monkeypatch: pytest.MonkeyPatch) 
         result = runner.invoke(main, ["semantic", "m.py", "--min-tier", "2"])
     assert result.exit_code == 2  # click.UsageError
     assert "no API key" in result.output
+
+
+def test_system_prompt_guards_against_issue_11_false_positives() -> None:
+    """The SYSTEM prompt must keep the clauses that fixed issue #11.
+
+    Regression guard (the real-model behaviour can't be unit-tested): SEM must
+    not penalise canonical-empty sections (DOC013's required form) and must make
+    a weak/empty verdict cite the offending span, so a substantive Returns that
+    opens with a noun phrase / "Does not return a value" is not mis-flagged.
+    """
+    assert "Raises: None." in analyzer.SYSTEM  # canonical-empty is correct, never flagged
+    assert "Does not return a value" in analyzer.SYSTEM  # side-effecting None-returns are GOOD
+    assert "quote" in analyzer.SYSTEM.lower()  # evidence rule: cite the span or verdict is good

@@ -65,7 +65,10 @@ precondition/constraint implied but not surfaced, an empty Returns. Configure a
 backend under `[tool.docpact.semantic]`; the LLM layer is pluggable
 (OpenAI-compatible ships — GitHub Models, OpenAI, local Ollama/vLLM — and other
 providers are added as adapters). `--dry-run` prints the exact prompts and sends
-nothing. See [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
+nothing. Quality scales with the model — `gpt-4o-mini` (the free GitHub Models
+on-ramp) is the floor and has a higher false-positive rate; a stronger model has
+fewer. SEM is advisory and **never gates `check`** for exactly this reason. See
+[ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
 
 ### Cross-file mode (`--crossfile`)
 
@@ -318,7 +321,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 1007 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 1008 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 

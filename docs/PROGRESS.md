@@ -170,6 +170,23 @@ features shipped.
 
 ## Recent changes (post-v0.3)
 
+### SEM001 prompt hardening — adopter issue #11 (2026-05-31)
+
+First real-codebase adopter run (an MCP server, `gpt-4o-mini` via GitHub Models)
+reported deterministic SEM001 false positives: substantive `Returns:` sections
+flagged as "restates the type" (the model judged the opening phrase, not the
+body), and `Raises: None.` flagged for "not clarifying" — a contradiction with
+DOC013, which *requires* the canonical `None.`. The `SYSTEM` prompt was hardened:
+read each section in full; canonical-empty (`None.`, "Does not return a value")
+is correct and never flagged; a Returns naming a side effect / what is
+written/sent / status codes / units is signal; and a weak/empty verdict MUST
+quote the offending span (text that names an effect/meaning can never be that
+span). Validated against real `gpt-4o-mini` — all three FPs cleared across 3
+stable runs, genuine cargo-cult still caught with cited evidence; `gpt-4o` was
+clean even before the loophole clause. Prompt-intent regression guard added
+(real-model behaviour can't be unit-tested — the §19 reliability gap). README
+notes SEM quality scales with model; advisory framing held up exactly as designed.
+
 ### Semantic layer (SEM) opened — 2026-05-30
 
 ADR-008. A spike (`scripts/spike_semantic.py`, GitHub Models; since removed once
