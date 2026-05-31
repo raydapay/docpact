@@ -1106,6 +1106,43 @@ def _bench_times(files: list[Path], config: Config, root: Path, runs: int) -> li
     return out
 
 
+def _bench_crossfile(
+    files: list[Path], config: Config, root: Path, runs: int
+) -> tuple[list[float], int, str | None]:
+    """Time the cross-file resolution pre-pass over `runs` iterations.
+
+    The pre-pass (one LSP session resolving every imported model/handler) is the
+    only cost `--crossfile` adds over a normal check; it is serial by nature.
+
+    Args:
+        files: Files to resolve cross-file references across.
+        config: Resolved configuration (drives [tool.docpact.lsp] + registry).
+        root: Project root (workspace folder for the server).
+        runs: Timed iterations.
+
+    Returns:
+        ``(times, resolved, error)`` — per-run wall-clock seconds, the count of
+        resolved references (floor + findings, an activity indicator), and an
+        error string when the server is unavailable (else None). An empty
+        ``times`` with no error means there were no cross-file entries to resolve.
+    """
+    import time
+
+    try:
+        warm = resolve_crossfile(files, config, root)  # warm-up: server spawn + index
+    except LSPError as exc:
+        return [], 0, str(exc)
+    resolved = len(warm.floor) + len(warm.findings)
+    if resolved == 0 and not warm.context:
+        return [], 0, None  # nothing to resolve in this tree
+    times: list[float] = []
+    for _ in range(runs):
+        start = time.perf_counter()
+        resolve_crossfile(files, config, root)
+        times.append(time.perf_counter() - start)
+    return times, resolved, None
+
+
 def _fmt_mb(value: float | None) -> str:
     """Format a memory value in MB, or an em dash when unmeasurable (e.g. Windows)."""
     return f"{value:.0f} MB" if value is not None else "—"
@@ -1129,10 +1166,18 @@ def _fmt_mb(value: float | None) -> str:
     metavar="N",
     help="Worker count to benchmark against serial (0 = all cores).",
 )
+@click.option(
+    "--crossfile",
+    "crossfile",
+    is_flag=True,
+    help="Also measure the cross-file resolution pre-pass (the cost --crossfile adds). "
+    "Requires a [tool.docpact.lsp] server.",
+)
 def bench(  # nodo: DOC012 -- click params; Args section would duplicate --help text
     paths: tuple[str, ...],
     runs: int,
     jobs: int,
+    crossfile: bool,
 ) -> None:
     """Measure serial vs parallel analysis on your own tree and recommend a jobs value.
 
@@ -1179,6 +1224,25 @@ def bench(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     )
     click.echo(f"  speedup: {speedup:.2f}x")
     click.echo("")
+
+    if crossfile:
+        cf_times, resolved, cf_err = _bench_crossfile(files, serial_cfg, root, runs)
+        if cf_err is not None:
+            click.echo(f"  cross-file pre-pass:    skipped — {cf_err}")
+        elif not cf_times:
+            click.echo("  cross-file pre-pass:       0.0 ms   (no cross-file entries to resolve)")
+        else:
+            cf_med = statistics.median(cf_times) * 1000
+            click.echo(
+                f"  cross-file pre-pass:    {cf_med:8.1f} ms   (serial, one LSP session; "
+                f"resolved {resolved} ref(s))"
+            )
+            click.echo(
+                "  note: --crossfile adds this once per run on top of the per-file pass; the "
+                "LSP\n        resolution is serial (single session), but per-file analysis "
+                "still parallelizes."
+            )
+        click.echo("")
 
     # Recommend on time (reliably measured); memory is a caveat, not the driver.
     if speedup >= 1.15:

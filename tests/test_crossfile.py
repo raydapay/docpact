@@ -537,6 +537,38 @@ def test_render_function_appends_context() -> None:
     assert "[cross-file contract]" not in render_function(fn, None)
 
 
+def test_cli_bench_crossfile_reports_prepass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _registry, impl = _impl_workspace(tmp_path)
+    (tmp_path / "docpact.toml").write_text(
+        f"[lsp]\nserver = ['{sys.executable}', '{_FAKE}', 'location', '{impl.as_uri()}']\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    with_cf = runner.invoke(main, ["bench", ".", "--crossfile", "--runs", "1"])
+    without = runner.invoke(main, ["bench", ".", "--runs", "1"])
+
+    assert with_cf.exit_code == 0
+    assert "cross-file pre-pass" in with_cf.output  # measured the LSP pre-pass
+    assert "cross-file pre-pass" not in without.output  # not measured without the flag
+
+
+def test_cli_bench_crossfile_no_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A tree with no tool registries: the pre-pass has nothing to resolve.
+    (tmp_path / "plain.py").write_text(
+        '"""Plain."""\n\n\ndef f() -> None:\n    """Do nothing."""\n'
+    )
+    (tmp_path / "docpact.toml").write_text(
+        f"[lsp]\nserver = ['{sys.executable}', '{_FAKE}', 'location', 'file:///x.py']\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(main, ["bench", ".", "--crossfile", "--runs", "1"])
+    assert result.exit_code == 0
+    assert "no cross-file entries to resolve" in result.output
+
+
 def test_cli_semantic_crossfile_dry_run_scopes_and_enriches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
