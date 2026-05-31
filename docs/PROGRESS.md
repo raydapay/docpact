@@ -137,6 +137,14 @@ resolution also feeds the semantic layer (ADR-010 "one resolution, two consumers
   model-instance and `**kwargs` handler shapes to stay low-false-positive. Runs in
   the same `--crossfile` pre-pass; resolver resolves per-rule severities from config.
 
+**Validated against real `ty server` (0.0.37), 2026-05-31** — not just the offline
+fake. `docpact check --crossfile` with `server = ["ty", "server"]` resolved and
+fired correctly on: a direct cross-module import (REG010 + REG011), a re-export
+chain (`pkg/__init__` re-exports `pkg.schemas.X`; REG010 resolved through it), and
+an aligned workspace (no false positives). `check src/ --crossfile` on docpact's own
+tree exits 0 (no registries → no findings, no crash). The CI gate still uses only the
+fake server (offline/deterministic); real-server use stays opt-in.
+
 **Sequencing:** each step is independently shippable and non-breaking — Step 1 ships
 unused, Step 2 is backward-compatible, Step 3 is the opt-in rule, Step 4 is docs,
 Step 5 increment 1 is the floor + semantic composition.
