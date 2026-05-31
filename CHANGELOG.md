@@ -1,6 +1,12 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a11] — 2026-05-31
+
+### Added
+- Call-based tool registration, offline REG010, and --lsp-log
+
+
 ## [0.1.0a10] — 2026-05-31
 
 ### Fixed

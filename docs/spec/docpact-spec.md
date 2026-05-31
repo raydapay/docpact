@@ -1136,7 +1136,7 @@ Optional:    Notes, Alternatives, References, Examples
 ```yaml
 repos:
   - repo: https://github.com/raydapay/docpact
-    rev: v0.1.0a10
+    rev: v0.1.0a11
     hooks:
       - id: docpact
         args: [--fix]
