@@ -4,7 +4,8 @@ Speaks just enough framed JSON-RPC to exercise the real LSPClient lifecycle
 (spawn → initialize → didOpen → definition → shutdown/exit) without a real
 language server, so CI stays offline and deterministic (ADR-009 invariant).
 
-Behavior is selected by argv[1] (a mode):
+Behavior is selected by argv[1] (a mode); argv[2], if present, is the URI that
+``definition`` resolves to (so a test can point at a real fixture file):
 
     initialize-error  initialize responds with a JSON-RPC error
     location          definition returns a single Location
@@ -24,24 +25,26 @@ import json
 import sys
 
 _DEF_URI = "file:///workspace/schemas.py"
-_LOCATION = {
-    "uri": _DEF_URI,
-    "range": {
-        "start": {"line": 5, "character": 6},
-        "end": {"line": 5, "character": 30},
-    },
-}
-_LOCATIONLINK = {
-    "targetUri": _DEF_URI,
-    "targetRange": {
-        "start": {"line": 5, "character": 0},
-        "end": {"line": 7, "character": 0},
-    },
-    "targetSelectionRange": {
-        "start": {"line": 5, "character": 6},
-        "end": {"line": 5, "character": 30},
-    },
-}
+
+
+def _location(uri: str) -> dict:
+    """A Location pointing at uri."""
+    return {
+        "uri": uri,
+        "range": {"start": {"line": 5, "character": 6}, "end": {"line": 5, "character": 30}},
+    }
+
+
+def _locationlink(uri: str) -> dict:
+    """A LocationLink pointing at uri."""
+    return {
+        "targetUri": uri,
+        "targetRange": {"start": {"line": 5, "character": 0}, "end": {"line": 7, "character": 0}},
+        "targetSelectionRange": {
+            "start": {"line": 5, "character": 6},
+            "end": {"line": 5, "character": 30},
+        },
+    }
 
 
 def _read_message() -> dict | None:
@@ -72,22 +75,23 @@ def _send(obj: dict) -> None:
     out.flush()
 
 
-def _definition_result(mode: str, definition_calls: int) -> object:
+def _definition_result(mode: str, definition_calls: int, uri: str) -> object:
     """Return the definition result for a mode, given the call count so far."""
     if mode in ("empty", "hang"):
         return None
     if mode == "delayed":
-        return None if definition_calls == 1 else _LOCATION
+        return None if definition_calls == 1 else _location(uri)
     if mode == "location-list":
-        return [_LOCATION]
+        return [_location(uri)]
     if mode == "locationlink":
-        return _LOCATIONLINK
-    return _LOCATION
+        return _locationlink(uri)
+    return _location(uri)
 
 
 def main() -> int:
     """Run the fake server loop until exit."""
     mode = sys.argv[1] if len(sys.argv) > 1 else "location"
+    target_uri = sys.argv[2] if len(sys.argv) > 2 else _DEF_URI
     definition_calls = 0
     while True:
         msg = _read_message()
@@ -113,7 +117,7 @@ def main() -> int:
                     {
                         "jsonrpc": "2.0",
                         "id": msg_id,
-                        "result": _definition_result(mode, definition_calls),
+                        "result": _definition_result(mode, definition_calls, target_uri),
                     }
                 )
         elif method == "shutdown":

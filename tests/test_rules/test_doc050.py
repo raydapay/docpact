@@ -8,11 +8,15 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from docpact.model.diagnostic import Severity
+from docpact.parser.pydantic_model import (
+    is_classvar as _is_classvar,
+)
+from docpact.parser.pydantic_model import (
+    is_pydantic_model as _is_pydantic_model,
+)
 from docpact.rules._registry import RuleConfig
 from docpact.rules.doc.doc050_pydantic_field import (
     _has_field_description,
-    _is_classvar,
-    _is_pydantic_model,
     check,
     check_pydantic_fields,
 )

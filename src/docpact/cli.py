@@ -38,7 +38,9 @@ from docpact.config import (
     rule_is_enabled,
     rule_is_file_ignored,
 )
+from docpact.crossfile import check_input_model_parity
 from docpact.fix import apply_fixes, diff_fixes
+from docpact.lsp import LSPError
 from docpact.model.diagnostic import Severity
 from docpact.output import (
     format_github,
@@ -505,6 +507,40 @@ def _run_checks(
     return results, suppressions
 
 
+def _run_crossfile_checks(
+    py_files: list[Path],
+    config: Config,
+    root: Path,
+) -> list[RuleResult]:
+    """Run the opt-in cross-file pass (REG010), degrading gracefully on failure.
+
+    Returns REG010 results, or an empty list when the rule is disabled or the
+    LSP server is unavailable. A server failure is reported on stderr and the
+    run continues without cross-file findings — cross-file is advisory tooling,
+    not a reason to fail an otherwise-clean check.
+    """
+    rules = all_rules()
+    if "REG010" not in rules or not rule_is_enabled("REG010", "REG", config.select, config.ignore):
+        click.echo(
+            "--crossfile given but REG010 is not enabled; add 'REG' to select. Skipping.",
+            err=True,
+        )
+        return []
+    meta, _ = rules["REG010"]
+    severity = config.rule_severities.get("REG010", meta.default_severity)
+    if severity == Severity.OFF:
+        return []
+    try:
+        return check_input_model_parity(py_files, config, root, severity)
+    except LSPError as exc:
+        click.echo(
+            f"warning: cross-file analysis skipped — {exc} "
+            f"(configure [tool.docpact.lsp] server or install docpact[crossfile]).",
+            err=True,
+        )
+        return []
+
+
 @click.group()
 @click.version_option()
 def main() -> None:
@@ -616,6 +652,13 @@ def main() -> None:
     help="Restrict checks to .py files changed relative to REF (e.g. main, HEAD~1).",
 )
 @click.option(
+    "--crossfile",
+    "crossfile",
+    is_flag=True,
+    help="Run opt-in cross-file rules (REG010) via the configured LSP server. "
+    "Requires docpact[crossfile] or a [tool.docpact.lsp] server.",
+)
+@click.option(
     "--show-files",
     "show_files",
     is_flag=True,
@@ -664,6 +707,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     add_suppression: bool,
     suppression_reason: str,
     changed_only: str | None,
+    crossfile: bool,
     show_files: bool,
     exit_non_zero_on_fix: bool,
     error_on_warning: bool,
@@ -737,6 +781,13 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         # Re-run checks on modified files so reported results reflect post-fix state.
         if modified:
             results, suppressions = _run_checks(py_files, config, config_root)
+
+    # Cross-file pass (ADR-009): opt-in via --crossfile, gated on REG010 being
+    # enabled and a server being available. Runs after fixes (its findings are
+    # not fixable) and before suppression so an inline REG010 suppression applies.
+    if crossfile:
+        results.extend(_run_crossfile_checks(py_files, config, config_root))
+        results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
 
     # Apply inline suppressions before output and exit-code evaluation.
     visible = apply_suppressions(results, suppressions)

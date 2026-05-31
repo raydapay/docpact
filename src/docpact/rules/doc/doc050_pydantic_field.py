@@ -28,6 +28,7 @@ import ast
 from typing import TYPE_CHECKING
 
 from docpact.model.diagnostic import RuleResult, Severity, SourceLocation
+from docpact.parser.pydantic_model import is_pydantic_model, iter_model_fields
 from docpact.rules._registry import RuleConfig, RuleMetadata, register
 
 if TYPE_CHECKING:
@@ -54,17 +55,6 @@ def check(
 ) -> list[RuleResult]:
     """DOC050 is file-level; all parameters unused. See check_pydantic_fields."""
     return []
-
-
-def _is_pydantic_model(node: ast.ClassDef) -> bool:
-    """Return True if the class appears to inherit from BaseModel."""
-    return any("BaseModel" in ast.unparse(base) for base in node.bases)
-
-
-def _is_classvar(annotation: ast.expr) -> bool:
-    """Return True if the annotation looks like ClassVar[...]."""
-    text = ast.unparse(annotation)
-    return text.startswith("ClassVar[") or text == "ClassVar"
 
 
 def _has_field_description(value: ast.expr | None) -> bool:
@@ -108,18 +98,9 @@ def check_pydantic_fields(
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
-        if not _is_pydantic_model(node):
+        if not is_pydantic_model(node):
             continue
-        for stmt in node.body:
-            if not isinstance(stmt, ast.AnnAssign):
-                continue
-            if not isinstance(stmt.target, ast.Name):
-                continue
-            name = stmt.target.id
-            if name.startswith("_"):
-                continue
-            if _is_classvar(stmt.annotation):
-                continue
+        for name, stmt in iter_model_fields(node):
             if _has_field_description(stmt.value):
                 continue
             results.append(
