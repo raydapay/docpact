@@ -1,6 +1,6 @@
 # ADR-013: Module-level semantic scan (SEM002) — model-sensitive, symbols-scoped
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-06-01
 **Deciders:** Ray
 **Related:** ADR-008 (opened the SEM layer; listed module-level scan as designed-not-built — this is its build decision); spec §12.2 (semantic design), §15.1 (`scan_modes`); `scripts/spike_semantic_module.py` (the evidence)
@@ -177,7 +177,10 @@ orientation-only). Dropping one loses real signal for no FP reduction.
 ### Neutral
 
 - `scan_modes` config (designed-not-built) becomes real for `["function", "module"]`.
-- SEM002 inherits SEM001's advisory posture and `finding_threshold`/severity controls.
+- SEM002 inherits SEM001's advisory posture and its own per-rule severity
+  (`[tool.docpact.rules] SEM002`). It surfaces a finding per weak rubric dimension;
+  `finding_threshold` governs SEM001's `weak`/`empty` vocabulary specifically and
+  does not gate SEM002 (modules have no `empty` verdict).
 - The throwaway spike (`scripts/spike_semantic_module.py`) is removed once SEM002 ships,
   as `scripts/spike_semantic.py` was after SEM001.
 
