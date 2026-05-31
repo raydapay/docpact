@@ -163,6 +163,24 @@ The floor is 3.11. `tomllib` is in stdlib from 3.11; that is the binding constra
 `match` statements and `importlib.metadata` are fine. PEP 695 `type X = ...` aliases
 and generics are 3.12-only — do not use them.
 
+### Path portability — Windows is in the CI matrix
+
+CI runs on Windows too, so path bugs are caught every time, not occasionally.
+Write path code Windows-safe from the start:
+
+- **Never hand-roll `file://` ↔ path conversion.** Use `Path.as_uri()` for
+  path→URI and `urllib.request.url2pathname` for URI→path. Hand-rolled
+  `unquote(urlparse(uri).path)` keeps the `/C:/x` leading slash on Windows and
+  silently breaks (this exact bug cost a Windows-only CI failure across the
+  cross-file suite). `Path.from_uri` is 3.13+ — not available at our 3.11 floor.
+- **Normalize before comparing or keying on paths.** Use `.resolve().as_posix()`
+  on *both* sides — never compare/`==`/dict-key on `str(path)` (backslashes vs.
+  forward slashes differ by OS) or on a non-resolved path. Both the producer and
+  the consumer of a path key must use the identical normalization.
+- **Tests must round-trip through the platform's own primitives** (`Path.as_uri()`
+  → `url2pathname`), not hardcode POSIX-style `file:///home/...` strings — a
+  hardcoded POSIX URI passes on Linux and is meaningless on Windows.
+
 ---
 
 ## Structural enforcement vs. semantic content
