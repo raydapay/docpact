@@ -83,6 +83,26 @@ severity. docpact takes no stance on whether you should — advisory by default,
 configurable if you want more. See
 [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
 
+> ### ⚠️ Module-level scan is model-sensitive — do not run it on a weak model
+>
+> Module-level semantic scan (`SEM002`, weak *module* docstrings — landing per
+> [ADR-013](docs/adr/ADR-013-module-level-semantic-scan.md)) is **only reliable on a
+> `gpt-4o`-class model**. On a weak model such as `gpt-4o-mini` it produced a
+> **43–71% false-positive rate** on real, well-written module docstrings in our
+> validation; on `gpt-4o` the same docstrings came back with **0% false positives**.
+>
+> **Why:** judging a *function* docstring (SEM001) is a tight, local call against the
+> signature — `gpt-4o-mini` handles it. Judging a *module* docstring means reasoning
+> about whether a one-paragraph description is consistent with the module's whole set
+> of public symbols without demanding it enumerate them. Weak models fail that
+> distinction: they flag good docstrings for "not listing every symbol." That is a
+> false positive, and at 40–70% it will bury the real findings and erode trust in the
+> tool.
+>
+> If you cannot use a `gpt-4o`-class model, **leave module-level scan off**
+> (`scan_modes = ["function"]`, the default). Function-level SEM001 remains usable on
+> the free `gpt-4o-mini` on-ramp; module-level does not.
+
 ### Tool-registry checks (`REG`)
 
 Many projects expose functions to an LLM not through an `@mcp.tool` decorator but

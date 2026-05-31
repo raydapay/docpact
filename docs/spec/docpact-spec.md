@@ -700,14 +700,14 @@ the added context).
 
 Cache key: `(function_content_hash, prompt_version, model_id)`.
 
-**Module-level** evaluates whether a module docstring correctly situates the module in the project. Requires project-level context. Rubric dimensions:
+**Module-level** (`SEM002`, weak module docstring — **decided, build pending ADR-013**) evaluates a module docstring against the module's public symbols. Input is the docstring + the list of public top-level defs/classes — **not** project context; the spike showed symbols alone reach 0% false positives, so `context_files` is *not* required for these dimensions (it stays reserved for a future dimension that needs sibling context). Rubric dimensions, each judged independently:
 
 | Dimension | Question |
 |---|---|
-| Scope accuracy | Does the description match what the module actually contains — neither too narrow nor too broad? |
-| Orientation | Does it help a reader decide when and why to use this module vs. sibling modules? |
+| Scope | Is the stated purpose *consistent* with the actual public symbols? (Consistency, **never** completeness — a docstring is good even if it names no symbol; flag only a purpose the symbols don't support, or a named symbol that doesn't exist.) |
+| Orientation | Is the docstring contentful, or pure boilerplate ("Utilities.", "The widgets module.")? |
 
-Cache key: `(file_content_hash, project_context_hash, prompt_version, model_id)`. The `project_context_hash` covers all files in `context_files` — a change to any of them invalidates module-level cache entries even if the module itself did not change. Module-level scan should therefore run less frequently than function-level (or be triggered by changes to `context_files`).
+**Model-sensitive (loud constraint, ADR-013).** Unlike SEM001 (usable on `gpt-4o-mini`), module-level is **only reliable on a `gpt-4o`-class model**: weak models scored 43–71% false positives on real docstrings (demanding symbol enumeration), vs 0% on `gpt-4o`. Leave module-level off (`scan_modes = ["function"]`, the default) if a capable model is not available. The consistency-not-completeness prompt clause is load-bearing — without it the FP rate is 71% even before model choice.
 
 A finding is emitted when any rubric dimension scores `missing`. `weak` is reported as a warning by default. Both thresholds are configurable (see §15.1).
 
