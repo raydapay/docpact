@@ -65,8 +65,12 @@ class SemanticConfig:
 
     Drives `docpact semantic`. ``backend`` selects the LLM adapter; the rest
     configure the chosen adapter. ``min_tier`` scopes analysis to agent-facing
-    functions. Off until a backend/model is configured and `docpact semantic`
-    is invoked — never touched by `check`.
+    functions. ``finding_threshold`` is the least-severe verdict that surfaces
+    as a finding — ``"weak"`` (default) surfaces both ``weak`` and ``empty``
+    docstring verdicts; ``"empty"`` surfaces only the wholly-vacuous ``empty``
+    ones, for teams that opt SEM into a gate and want the lowest-noise signal.
+    Off until a backend/model is configured and `docpact semantic` is invoked —
+    never touched by `check`.
 
     Stability: beta
     """
@@ -76,6 +80,7 @@ class SemanticConfig:
     api_base: str | None = None
     api_key_env: str = "OPENAI_API_KEY"
     min_tier: int = 3
+    finding_threshold: str = "weak"
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,12 +320,20 @@ def _parse_semantic(raw: object) -> SemanticConfig:
             raise ConfigError("semantic.min_tier: must be an integer 1-4")
         min_tier = v
 
+    finding_threshold = defaults.finding_threshold
+    if "finding_threshold" in data:
+        v = data["finding_threshold"]
+        if not isinstance(v, str) or v not in ("weak", "empty"):
+            raise ConfigError('semantic.finding_threshold: must be "weak" or "empty"')
+        finding_threshold = v
+
     return SemanticConfig(
         backend=_str("backend", defaults.backend),
         model=_str("model", defaults.model),
         api_base=api_base,
         api_key_env=_str("api_key_env", defaults.api_key_env),
         min_tier=min_tier,
+        finding_threshold=finding_threshold,
     )
 
 

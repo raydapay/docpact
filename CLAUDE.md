@@ -66,6 +66,11 @@ Key facts a fresh session needs:
   leg in `crossfile/resolver.py`. ADR-012.
 - `[tool.docpact.lsp] log = "path"` (or `check --lsp-log PATH`) appends the LSP server's stderr
   to a file; default is discard. The server subprocess otherwise routes stderr to `DEVNULL`.
+- SEM is advisory by default and **never in `check`/`make verify`/dogfood**; gating is the
+  user's call (non-zero exit on findings + `[tool.docpact.semantic] finding_threshold`
+  (`"weak"` default | `"empty"`) + per-rule `SEM001` severity). `docpact semantic
+  --changed-only REF` scopes to a git diff. Verdict vocab is `good/weak/empty`. Module-level
+  scan, `--sample-rate`, `any-llm` backend, and caching are designed-not-built.
 
 **The project owner is Ray.** Address him directly when asking questions. Ray's
 working preferences are documented below under "Working with Ray."

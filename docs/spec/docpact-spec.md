@@ -1,7 +1,7 @@
 # docpact — Specification
 
-**Version:** 0.4.3  
-**Status:** Active — v0.1–v0.3 complete; post-v0.3: SEM (ADR-008), REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped  
+**Version:** 0.4.4  
+**Status:** Active — v0.1–v0.3 complete; post-v0.3: SEM (ADR-008) + `finding_threshold`/`--changed-only`, REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped  
 **Last revised:** 2026-05-31
 
 ---
@@ -660,12 +660,23 @@ review, not pre-commit, not a blocking gate by default.
 Emits `SEM`-namespaced `RuleResult` objects through the standard output formatters.
 **Shipped (ADR-008):** `SEM001` (weak/empty docstring — cargo-cult, unsurfaced
 precondition/constraint, empty Returns); the `--dry-run`, `--min-tier`, `--format`,
-and `--exit-zero` options; and a **pluggable LLM backend** (`LLMBackend.complete`
-protocol + factory; one `openai-compat` adapter covering GitHub Models / OpenAI /
-local servers, with other providers added as adapter classes). **Designed, not yet
-built:** `--sample-rate`, `--changed-only`, module-level scans, and `finding_threshold`
-(spec §15.1). The DOC051/REG050 *intent* (constraint surfacing) is delivered here as
-SEM001; those deterministic codes stay reserved.
+`--exit-zero`, and `--changed-only` options; the `finding_threshold` config (least-severe
+verdict surfaced — `"weak"` (default) surfaces `weak`+`empty`, `"empty"` surfaces only
+`empty`); and a **pluggable LLM backend** (`LLMBackend.complete` protocol + factory; one
+`openai-compat` adapter covering GitHub Models / OpenAI / local servers, with other
+providers added as adapter classes). **Designed, not yet built:** `--sample-rate`,
+module-level scans (and their `scan_modes`/`context_files` config), the `any-llm` backend,
+and content-hash caching. The DOC051/REG050 *intent* (constraint surfacing) is delivered
+here as SEM001; those deterministic codes stay reserved.
+
+**Advisory by default; gating is the user's call.** `semantic` is never part of `check`,
+`make verify`, or dogfood, so the deterministic gate stays offline and reproducible. A team
+that wants SEM to gate opts in by running `docpact semantic` as its own CI step (it exits
+non-zero on findings unless `--exit-zero`) and tuning noise with `finding_threshold` and the
+`SEM001` severity. docpact takes no product stance on whether SEM *should* gate — it stays
+advisory by default and configurable. Flake-proofing a gate across prompt/model changes
+(stable finding identity, a snapshot baseline; §21 Q1) is deferred until a gating adopter
+needs it; nothing in the current design forecloses it.
 
 **`--crossfile` (ADR-010):** when passed, `semantic` reuses the same cross-file
 resolution as `check --crossfile` for two effects — *scope*, so an imported tool
@@ -966,35 +977,37 @@ no_tier_floor = ["src/legacy/**"]
 [tool.docpact.pydantic]
 undescribed_fields = "warning"  # error | warning | off
 
-# Semantic scan configuration (docpact[semantic] required).
+# Semantic scan configuration (docpact[semantic] required). Keys below are
+# SHIPPED unless marked "(designed, not yet built)".
 [tool.docpact.semantic]
-# Backend adapter: "openai-compat" | "any-llm"
+# Backend adapter. Shipped: "openai-compat". Designed, not yet built: "any-llm".
 backend = "openai-compat"
 
-# Model string — interpreted by the backend.
-# openai-compat: passed as-is to the HTTP endpoint.
-# any-llm: "provider/model" format, e.g. "anthropic/claude-sonnet-4-6".
-model = "anthropic/claude-sonnet-4-6"
+# Model string — passed as-is to the openai-compat HTTP endpoint.
+model = "openai/gpt-4o-mini"
 
 # Name of the environment variable holding the API key. Never the key itself.
-api_key_env = "ANTHROPIC_API_KEY"
+api_key_env = "GITHUB_TOKEN"
 
-# Base URL for openai-compat backends. Required when backend = "openai-compat".
+# Base URL for openai-compat backends. Required for backend = "openai-compat".
+api_base = "https://models.github.ai/inference"   # GitHub Models (free on-ramp)
 # api_base = "https://openrouter.ai/api/v1"
-# api_base = "http://localhost:8080"   # Bifrost or other local gateway
-# api_base = "http://localhost:11434/v1"  # Ollama
+# api_base = "http://localhost:11434/v1"          # Ollama
 
-# Project-level context files for module-level scan.
-# Relative to the project root. Directories pull in *.md files recursively.
-context_files = ["README.md", "CLAUDE.md", "docs/"]
+# Minimum tier to review (1-4). Default 3 (agent-facing). --min-tier overrides.
+min_tier = 3
 
-# Scan modes to run: "function" | "module" | both.
-scan_modes = ["function"]
+# Least-severe verdict that surfaces as a finding. "weak" (default) surfaces both
+# weak and empty docstring verdicts; "empty" surfaces only the wholly-vacuous ones
+# — the lowest-noise signal for a team that opts SEM into a gate.
+finding_threshold = "weak"
 
-# Verdict threshold that triggers a finding.
-# "missing": error only when a dimension verdict is "missing".
-# "weak":    warning on "weak", error on "missing".
-finding_threshold = "missing"
+# (designed, not yet built) Project-level context files for module-level scan,
+# relative to the project root; directories pull in *.md files recursively.
+# context_files = ["README.md", "CLAUDE.md", "docs/"]
+
+# (designed, not yet built) Scan modes to run: "function" | "module" | both.
+# scan_modes = ["function"]
 
 # Cross-file analysis via an LSP server (ADR-009; docpact[crossfile]).
 # Used only by `docpact check --crossfile` (opt-in). Provider-agnostic:
@@ -1085,14 +1098,23 @@ docpact list-rules  [--format {text,json}]
 
 Runs LLM-based semantic analysis. Requires `docpact[semantic]` and configured credentials. See §12.2 for full design. Never shares a code path with `check`.
 
+Shipped:
+
+```
+  --min-tier {1,2,3,4}            Scope to this tier and above. Overrides config (default 3).
+  --changed-only REF              Restrict to .py files changed relative to REF.
+  --crossfile                     Resolve imported handlers/models via the LSP server (ADR-010).
+  --format {text,json}            Output format. Default: text.
+  --dry-run                       Show the prompts that would be sent; no API call, no code sent.
+  --exit-zero                     Exit 0 even when findings are reported.
+```
+
+Designed, not yet built:
+
 ```
   --scan-modes {function,module}  Scan modes to run. Overrides config. Default: ["function"].
-  --changed-only REF              Restrict to .py files changed relative to REF.
   --sample-rate FLOAT             Fraction of eligible units to analyse (0.0–1.0). For cost control.
-  --format {text,json}            Output format. Default: text.
-  --dry-run                       Show what would be analysed without calling the LLM backend.
-  --select CODES                  SEM rule codes or prefixes to enable.
-  --ignore CODES                  SEM rule codes or prefixes to disable.
+  --select / --ignore CODES       SEM rule codes or prefixes (only SEM001 exists today).
 ```
 
 ### `generate`
@@ -1198,7 +1220,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-Module-level scan should run at a lower frequency (monthly or on changes to `context_files`) due to higher caching cost (see §12.2). Add `--scan-modes module` in a separate job or a separate workflow.
+Once module-level scan ships (designed, not yet built — §12.2), it should run at a lower frequency (monthly or on changes to `context_files`) due to higher caching cost; add `--scan-modes module` in a separate job or workflow then.
 
 ---
 

@@ -1446,6 +1446,14 @@ def _collect_semantic_functions(
 )
 @click.option("--exit-zero", is_flag=True, help="Exit 0 even when findings are reported.")
 @click.option(
+    "--changed-only",
+    "changed_only",
+    metavar="REF",
+    default=None,
+    help="Restrict the scan to .py files changed relative to REF (e.g. main, HEAD~1). "
+    "The cheapest cost control — review only what a PR touches.",
+)
+@click.option(
     "--crossfile",
     "crossfile",
     is_flag=True,
@@ -1459,6 +1467,7 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
     dry_run: bool,
     output_format: str,
     exit_zero: bool,
+    changed_only: str | None,
     crossfile: bool,
 ) -> None:
     """LLM-backed semantic docstring analysis (advisory, opt-in).
@@ -1475,6 +1484,9 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
     scope = min_tier if min_tier is not None else config.semantic.min_tier
 
     py_files = _collect_py_files(paths, config, root)
+    if changed_only is not None:
+        changed_set = _get_changed_py_files(changed_only, Path.cwd())
+        py_files = [f for f in py_files if f.resolve() in changed_set]
 
     # Cross-file resolution (ADR-010): floor promotes imported handlers into
     # scope; context enriches each prompt with the imported contract. Optional,
@@ -1505,7 +1517,13 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
     severity = config.rule_severities.get("SEM001", Severity.WARNING)
     try:
         backend = make_backend(config.semantic)
-        report = _sem_analyze(functions, backend, severity=severity, context=context)
+        report = _sem_analyze(
+            functions,
+            backend,
+            severity=severity,
+            threshold=config.semantic.finding_threshold,
+            context=context,
+        )
     except SemanticError as exc:
         raise click.UsageError(str(exc)) from exc
 

@@ -193,6 +193,28 @@ features shipped.
 
 ## Recent changes (post-v0.3)
 
+### SEM `finding_threshold` + `--changed-only`; advisory/gating posture (2026-05-31)
+
+Two cheap SEM enablers shipped, plus a spec-honesty pass.
+
+- **`finding_threshold`** (`[tool.docpact.semantic]`, default `"weak"`): the least-severe
+  verdict that surfaces. `"weak"` surfaces weak+empty (current behaviour); `"empty"`
+  surfaces only the wholly-vacuous ones — the low-noise signal a gating team wants.
+  `analyze(threshold=...)` filters via an ascending `_VERDICT_RANK`.
+- **`docpact semantic --changed-only REF`**: reuses `check`'s `_get_changed_py_files` to
+  scope the scan to a PR's changed files — the cheapest cost control, far simpler than
+  caching (which is deferred).
+- **Posture (Ray):** SEM is advisory by default; *gating is the user's call*, not a product
+  stance. Gating already works (non-zero exit on findings + per-rule severity +
+  `finding_threshold`); flake-proofing across prompt/model changes (snapshot baseline, §21
+  Q1) stays deferred until a gating adopter needs it. Recorded in spec §12.2, not a new ADR
+  (consistent with ADR-008, not a reversal).
+- **Spec honesty:** §15.1 had documented `context_files`/`scan_modes`/`finding_threshold`/
+  `any-llm` as if shipped; now each is marked shipped vs designed-not-built, and the verdict
+  vocab reconciled to the real `good/weak/empty` (was `missing/weak`).
+
+Module-level scan: spike pending (see below) before any build.
+
 ### SEM001 prompt hardening — adopter issue #11 (2026-05-31)
 
 First real-codebase adopter run (an MCP server, `gpt-4o-mini` via GitHub Models)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import urllib.error
 from pathlib import Path
 
@@ -86,6 +87,26 @@ def test_semantic_full_parse(tmp_path: Path) -> None:
 def test_semantic_min_tier_validated(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[tool.docpact.semantic]\nmin_tier = 9\n")
     with pytest.raises(Exception, match="min_tier"):
+        load_config(tmp_path)
+
+
+def test_semantic_finding_threshold_defaults_to_weak(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC"]\n')
+    assert load_config(tmp_path).config.semantic.finding_threshold == "weak"
+
+
+def test_semantic_finding_threshold_parsed(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.docpact.semantic]\nfinding_threshold = "empty"\n'
+    )
+    assert load_config(tmp_path).config.semantic.finding_threshold == "empty"
+
+
+def test_semantic_finding_threshold_validated(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.docpact.semantic]\nfinding_threshold = "loud"\n'
+    )
+    with pytest.raises(Exception, match="finding_threshold"):
         load_config(tmp_path)
 
 
@@ -200,6 +221,32 @@ def test_analyze_maps_verdicts() -> None:
     assert "missing precondition; side effect" in report.results[1].message
 
 
+def _verdicts_reply() -> str:
+    """A reply with one each of empty / good / weak, for threshold tests."""
+    return json.dumps(
+        {
+            "findings": [
+                {"name": "f_empty", "verdict": "empty", "issues": ["says nothing"]},
+                {"name": "f_good", "verdict": "good", "issues": []},
+                {"name": "f_weak", "verdict": "weak", "issues": ["missing precondition"]},
+            ]
+        }
+    )
+
+
+def test_threshold_weak_surfaces_weak_and_empty() -> None:
+    funcs = [_fn("f_empty", line=10), _fn("f_good", line=20), _fn("f_weak", line=30)]
+    report = analyzer.analyze(funcs, _FakeBackend(_verdicts_reply()), threshold="weak")
+    assert [r.location.line for r in report.results] == [10, 30]  # empty + weak
+
+
+def test_threshold_empty_drops_weak() -> None:
+    funcs = [_fn("f_empty", line=10), _fn("f_good", line=20), _fn("f_weak", line=30)]
+    report = analyzer.analyze(funcs, _FakeBackend(_verdicts_reply()), threshold="empty")
+    assert [r.location.line for r in report.results] == [10]  # only empty surfaces
+    assert all(r.message.startswith("empty:") for r in report.results)
+
+
 def test_analyze_unparseable_reply_skipped() -> None:
     report = analyzer.analyze([_fn("f")], _FakeBackend("not json at all"))
     assert report.results == []
@@ -261,6 +308,36 @@ def test_semantic_no_functions_in_scope() -> None:
         result = runner.invoke(main, ["semantic", "m.py"])  # default min-tier 3; _helper is tier 1
     assert result.exit_code == 0
     assert "No functions in scope" in result.output
+
+
+def test_semantic_changed_only_restricts_scope() -> None:
+    # --changed-only scopes the scan to .py files changed vs a git ref, the same
+    # machinery `check` uses. --dry-run keeps it offline (no backend).
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        tdp = Path(td)
+        subprocess.run(["git", "init"], cwd=td, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t.com"], cwd=td, check=True, capture_output=True
+        )
+        subprocess.run(["git", "config", "user.name", "T"], cwd=td, check=True, capture_output=True)
+        (tdp / "pyproject.toml").write_text("[project]\nname = 't'\n")
+        (tdp / "unchanged.py").write_text('"""M."""\n\n\ndef untouched_fn(x):\n    """Old."""\n')
+        subprocess.run(["git", "add", "."], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=td, check=True, capture_output=True)
+
+        (tdp / "touched.py").write_text('"""M."""\n\n\ndef changed_fn(x):\n    """New."""\n')
+        subprocess.run(["git", "add", "touched.py"], cwd=td, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "add"], cwd=td, check=True, capture_output=True)
+
+        result = runner.invoke(
+            main,
+            ["semantic", "--changed-only", "HEAD~1", "--min-tier", "1", "--dry-run", str(tdp)],
+            catch_exceptions=False,
+        )
+    assert result.exit_code == 0
+    assert "changed_fn" in result.output
+    assert "untouched_fn" not in result.output
 
 
 def test_semantic_real_run_with_fake_backend(monkeypatch: pytest.MonkeyPatch) -> None:

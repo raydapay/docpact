@@ -54,6 +54,7 @@ docpact list-rules                    # list all rules with severity and fixabil
 docpact bench src/                    # measure serial vs parallel on your tree; recommends a jobs value
 docpact bench src/ --crossfile        # also measure the cross-file pre-pass cost (startup vs query time)
 docpact semantic src/ --dry-run       # LLM-backed meaning check (advisory); --dry-run shows prompts, no API call
+docpact semantic src/ --changed-only origin/main  # scope the meaning check to a PR's changed files
 docpact check src/ --crossfile        # opt-in cross-file rules (REG010/REG011) via an LSP server
 ```
 
@@ -67,7 +68,19 @@ backend under `[tool.docpact.semantic]`; the LLM layer is pluggable
 providers are added as adapters). `--dry-run` prints the exact prompts and sends
 nothing. Quality scales with the model — `gpt-4o-mini` (the free GitHub Models
 on-ramp) is the floor and has a higher false-positive rate; a stronger model has
-fewer. SEM is advisory and **never gates `check`** for exactly this reason. See
+fewer.
+
+`--changed-only <ref>` scopes the scan to files a PR touched (the cheapest cost
+control); `finding_threshold` under `[tool.docpact.semantic]` tunes noise —
+`"weak"` (default) surfaces weak and empty docstrings, `"empty"` only the
+wholly-vacuous ones.
+
+**Advisory by default; gating is your call.** SEM is **never part of `check`**, so
+the deterministic gate stays offline and reproducible. A team that *wants* SEM to
+gate runs `docpact semantic` as its own CI step (it exits non-zero on findings
+unless `--exit-zero`) and tunes noise with `finding_threshold` + the `SEM001`
+severity. docpact takes no stance on whether you should — advisory by default,
+configurable if you want more. See
 [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
 
 ### Tool-registry checks (`REG`)
@@ -320,6 +333,7 @@ model = "openai/gpt-4o-mini"
 api_base = "https://models.github.ai/inference"   # e.g. GitHub Models (free to try)
 api_key_env = "GITHUB_TOKEN"                 # name of the env var holding the key — never the key
 # min_tier = 3                               # scope to agent-facing tools (default 3)
+# finding_threshold = "weak"                 # "weak" surfaces weak+empty; "empty" only the vacuous
 
 # Opt-in: cross-file analysis (imported models/handlers) via an LSP server.
 # Used only by `check --crossfile`; the same-file REG010 leg needs none of this.
@@ -387,7 +401,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 1029 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 1035 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 

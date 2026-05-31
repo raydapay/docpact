@@ -190,11 +190,18 @@ def _extract_json(content: str) -> dict:
         raise
 
 
+# Verdict severity rank, ascending. A verdict surfaces as a finding only when
+# its rank is at least the configured finding_threshold's rank (config §15.1).
+# "good" is absent — it never produces a finding.
+_VERDICT_RANK = {"weak": 0, "empty": 1}
+
+
 def analyze(
     functions: list[FunctionInfo],
     backend: LLMBackend,
     *,
     severity: Severity = Severity.WARNING,
+    threshold: str = "weak",
     context: CrossfileContext | None = None,
 ) -> SemanticReport:
     """Run semantic analysis over tier-scoped functions and return SEM001 findings.
@@ -203,15 +210,18 @@ def analyze(
         functions: Functions to review (the caller scopes these by tier).
         backend: The LLM backend to call.
         severity: Severity to attach to emitted SEM001 results.
+        threshold: Least-severe verdict that surfaces as a finding — ``"weak"``
+            (default) surfaces both ``weak`` and ``empty``; ``"empty"`` surfaces
+            only ``empty``. Verdicts ranking below the threshold are dropped.
         context: Optional cross-file context map (ADR-010); when provided, a
             function's resolved input-model fields and registry description are
             appended to its prompt so the model judges the full cross-file
             contract.
 
     Returns:
-        A SemanticReport with one SEM001 RuleResult per weak/empty verdict
-        (good verdicts produce nothing), plus the counts of functions reviewed
-        and requests made.
+        A SemanticReport with one SEM001 RuleResult per surfaced verdict (good
+        verdicts, and verdicts below ``threshold``, produce nothing), plus the
+        counts of functions reviewed and requests made.
 
     Raises:
         SemanticError: A backend call failed (propagated from the backend).
@@ -227,6 +237,7 @@ def analyze(
     for fn in functions:
         by_name.setdefault(fn.name, fn)
 
+    min_rank = _VERDICT_RANK.get(threshold, 0)
     results: list[RuleResult] = []
     batches = build_batches(functions, context=context)
     for batch in batches:
@@ -237,7 +248,7 @@ def analyze(
             continue  # advisory: skip an unparseable batch rather than fail
         for finding in parsed.get("findings", []):
             verdict = finding.get("verdict")
-            if verdict not in ("weak", "empty"):
+            if verdict not in _VERDICT_RANK or _VERDICT_RANK[verdict] < min_rank:
                 continue
             fn = by_name.get(finding.get("name", ""))
             if fn is None:
