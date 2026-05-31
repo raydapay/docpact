@@ -52,6 +52,7 @@ docpact check src/ --jobs 0           # parallel analysis across all cores (0=au
 docpact generate src/                 # insert stub docstrings for undocumented functions
 docpact list-rules                    # list all rules with severity and fixability
 docpact bench src/                    # measure serial vs parallel on your tree; recommends a jobs value
+docpact bench src/ --crossfile        # also measure the cross-file pre-pass cost (startup vs query time)
 docpact semantic src/ --dry-run       # LLM-backed meaning check (advisory); --dry-run shows prompts, no API call
 docpact check src/ --crossfile        # opt-in cross-file rules (REG010/REG011) via an LSP server
 ```
@@ -116,13 +117,54 @@ default with the `crossfile` extra, or point at a server you already have.
 It runs only when both `REG` is in `select` and `--crossfile` is passed; a
 missing or failing server degrades gracefully (a clear note, the run continues).
 Per-symbol LSP queries plus workspace indexing make it heavier than the per-file
-pass — fitting for an opt-in CI step, not every keystroke. Measure the added cost
-on your own tree with `docpact bench --crossfile`: it breaks the pre-pass into
-server spawn+init vs. query time (and flags the slowest query, usually the
-server's first workspace index), so you can see what dominates on *your* code.
-The LSP resolution is serial (one session); the per-file analysis still
-parallelizes (`--jobs`). Deterministic with a pinned server.
-See [ADR-009](docs/adr/ADR-009-cross-file-via-lsp.md).
+pass — fitting for an opt-in CI step, not every keystroke. The LSP resolution is
+serial (one session); the per-file analysis still parallelizes (`--jobs`).
+Deterministic with a pinned server. **Measure the cost on your own tree before
+relying on it — see below.** See [ADR-009](docs/adr/ADR-009-cross-file-via-lsp.md).
+
+### Measuring cross-file cost (`bench --crossfile`)
+
+There is no separate timing flag — the measurement lives in `bench`, the same
+command you use to decide `--jobs`. It tells you whether `--crossfile` is cheap
+enough for your CI, and *where* its time goes, so you can act on it:
+
+```
+$ docpact bench src/ --crossfile
+  serial (jobs=1):           327.1 ms   peak 37 MB
+  parallel (jobs=16):        122.3 ms   ~16x worker peak 31 MB
+  speedup: 2.68x
+  cross-file pre-pass:        56.4 ms   (serial, one LSP session; resolved 10 ref(s))
+    server spawn + init:       5.4 ms
+    queries (20):             42.4 ms total, slowest 32.8 ms
+  hint: the slowest single query dominates — that is the server's initial
+        workspace index; a persistent/warm server would amortize it across runs.
+```
+
+What each line measures:
+
+- **serial / parallel / speedup** — the per-file pass (a normal `check`),
+  *unchanged* by `--crossfile`. This is the part `--jobs` parallelizes.
+- **cross-file pre-pass** — the wall-time `--crossfile` *adds*: one LSP session
+  resolving every imported model/handler, paid once per run. It reports `0.0 ms`
+  (and never spawns a server) if your tree has no tool registries.
+- **server spawn + init** — launching the language server and the LSP handshake.
+- **queries (N) … slowest** — the `textDocument/definition` calls. The slowest
+  one usually carries the server's *first* workspace index (built lazily on the
+  first query), which is why it dwarfs the rest.
+
+How to use the result — the `hint` line names the lever; the rule of thumb:
+
+| What dominates | What it means | Lever |
+|---|---|---|
+| `server spawn + init`, or the **slowest query** | the one-time **workspace index** | a persistent/warm server (index once, reuse across runs) |
+| the **bulk of `queries`** (total minus the slowest) | per-ref **round-trip latency** | concurrent / pipelined queries in one session |
+| nothing — `0.0 ms`, no entries | no cross-file registries | `--crossfile` is free; leave it enabled |
+
+Both levers are designed but **not yet built** (ADR-009) — deliberately gated on
+whether real adopter trees turn out index-bound or query-bound, which this is how
+you find out. Expect the pre-pass to be **index-bound on large codebases** (the
+index grows with project size while per-query work stays cheap) — which points at
+a warm server, not more concurrency. Run it once on your repo to know your number.
 
 ## What it checks
 
