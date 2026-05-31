@@ -140,7 +140,8 @@ resolution also feeds the semantic layer (ADR-010 "one resolution, two consumers
 **Sequencing:** each step is independently shippable and non-breaking — Step 1 ships
 unused, Step 2 is backward-compatible, Step 3 is the opt-in rule, Step 4 is docs,
 Step 5 increment 1 is the floor + semantic composition.
-`scripts/spike_lsp.py` was deleted when Step 3 landed.
+`scripts/spike_lsp.py` and `scripts/spike_semantic.py` were deleted once their
+features shipped.
 
 ---
 
@@ -148,7 +149,8 @@ Step 5 increment 1 is the floor + semantic composition.
 
 ### Semantic layer (SEM) opened — 2026-05-30
 
-ADR-008. A spike (`scripts/spike_semantic.py`, GitHub Models) validated the LLM
+ADR-008. A spike (`scripts/spike_semantic.py`, GitHub Models; since removed once
+the feature shipped) validated the LLM
 signal: 26/26 well-documented real agent tools verdict "good" (no false positives);
 planted cargo-cult/hidden-contract caught. So the long-deferred semantic mode is now
 active, scoped to what the spike proved.

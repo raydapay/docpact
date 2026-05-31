@@ -79,6 +79,28 @@ that reference **imported** symbols:
   `input_model` fields) is not accepted by its imported `handler`'s signature —
   the cross-file analogue of REG001.
 
+```python
+# schemas.py
+class SearchInput(BaseModel):
+    query: str
+    limit: int
+
+# tools.py  — registers an imported model + handler
+from schemas import SearchInput
+from handlers import search_cases          # def search_cases(query: str) -> list
+
+TOOLS = [ToolDefinition(name="search", input_model=SearchInput, handler=search_cases,
+                        description="Search.\n\nArgs:\n    query: Text to match.")]
+```
+
+```
+$ docpact check . --crossfile
+tools.py:6:8: REG010 input model 'SearchInput' field 'limit' is not documented in tool 'search' Args section
+tools.py:6:8: REG011 tool 'search' input model declares parameter 'limit', which imported handler 'search_cases' does not accept
+```
+
+The model gained a `limit` field; neither the tool's `Args:` nor the handler caught up.
+
 It also applies a **cross-file Tier-3 floor**: a function registered as an
 imported handler is held to the agent-facing documentation bar in its own file,
 and `docpact semantic --crossfile` reviews it (and feeds the imported model's
@@ -234,7 +256,7 @@ repos:
 
 `docpact` checks structure, not meaning. A docstring that passes every check is not necessarily a good docstring. It is a *consistent* one: the Args match the signature, the required sections are present, the types don't contradict the prose. Content quality — whether the description is actually useful — is the author's responsibility.
 
-It does not replace ruff or ty. It does not import the code it analyzes. It does not perform LLM-based semantic analysis (designed in the spec, explicitly deferred).
+It does not replace ruff or ty, and it never imports or executes the code it analyzes — all analysis is static (the optional cross-file mode resolves imports through a language server, which also resolves statically). Deterministic structural checks are the default; the opt-in `docpact semantic` mode adds advisory, LLM-judged *meaning* checks as a separate, non-blocking command.
 
 ## Platform support
 
