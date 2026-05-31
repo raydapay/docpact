@@ -1,6 +1,16 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a8] — 2026-05-31
+
+### Added
+- **lsp:** Add provider-agnostic LSP client + config (Step 1)
+- **reg:** Capture input_model ref + description Args keys (Step 2)
+- **reg:** Add REG010 cross-file Args/input-model parity (Step 3)
+- **crossfile:** Imported-handler Tier-3 floor + semantic composition (ADR-010 increment 1)
+- **reg:** Add REG011 cross-file handler-signature parity (ADR-010 increment 2)
+
+
 ## [0.1.0a7] — 2026-05-30
 
 ### Added
