@@ -52,6 +52,7 @@ from docpact.output import (
     format_text,
 )
 from docpact.parser.docstring import GoogleParser, NumpyParser
+from docpact.parser.pydantic_model import model_field_names
 from docpact.parser.registry import extract_tool_registry
 from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
 from docpact.rules import load_builtin_rules
@@ -66,6 +67,7 @@ from docpact.rules.fix.fix004_misplaced_suppression import check_misplaced_suppr
 from docpact.rules.parse.parse001_syntax_error import check_syntax_error as check_parse_syntax_error
 from docpact.rules.reg.reg001_schema_phantom_param import check_registry_phantom_params
 from docpact.rules.reg.reg002_unmatched_entry import check_unmatched_entries
+from docpact.rules.reg.reg010_input_model_parity import parity_findings
 from docpact.semantic.analyzer import SYSTEM as _SEM_SYSTEM
 from docpact.semantic.analyzer import analyze as _sem_analyze
 from docpact.semantic.analyzer import build_batches as _sem_build_batches
@@ -305,11 +307,20 @@ def _registry_is_active(config: Config, extra_ignores: frozenset[str]) -> bool:
 
 def _registry_floor_names(
     entries: list[ToolRegistryEntry],
+    function_names: frozenset[str],
     file_path: Path,
     config: Config,
     root: Path,
 ) -> frozenset[str] | None:
     """Return the registered names that should receive the Tier 3 floor, or None.
+
+    Includes each entry's ``name`` (the decorator-equivalent convention, where
+    the tool name *is* the function name) and, for the call-based idiom where
+    the tool name and handler differ, the ``handler_ref`` name of every entry
+    whose handler is defined in this same file (ADR-011). The latter is gated on
+    ``function_names`` so the floor lands on the registered handler and nothing
+    else — never on an imported handler (the cross-file floor owns that, ADR-010)
+    nor on unrelated helpers.
 
     None when the floor is disabled for this file — either ``assign_tier = false``
     project-wide or the file matches a ``no_tier_floor`` glob (ADR-005).
@@ -318,7 +329,13 @@ def _registry_floor_names(
         return None
     if file_matches_any(file_path, config.registry.no_tier_floor, root):
         return None
-    return frozenset(e.name for e in entries)
+    names = {e.name for e in entries}
+    names |= {
+        e.handler_ref.name
+        for e in entries
+        if e.handler_ref is not None and e.handler_ref.name in function_names
+    }
+    return frozenset(names)
 
 
 def _run_registry_rules(
@@ -350,11 +367,50 @@ def _run_registry_rules(
     return file_results
 
 
+def _run_same_file_reg010(
+    entries: list[ToolRegistryEntry],
+    source_text: str,
+    file_path: Path,
+    extra_ignores: frozenset[str],
+    config: Config,
+    rules: dict[str, tuple[RuleMetadata, RuleFn]],
+) -> list[RuleResult]:
+    """Run REG010 (Args↔input_model parity) for models defined in this same file.
+
+    The offline leg of REG010 (ADR-012): when an entry's ``input_model`` resolves
+    to a Pydantic class defined in *this* file, its fields are read by AST and
+    compared to the documented Args — no language server, no ``--crossfile``. An
+    ``input_model`` that names no same-file class (i.e. an imported one) yields no
+    fields here and is left to the cross-file pass.
+    """
+    if "REG010" not in rules:
+        return []
+    if not rule_is_enabled("REG010", "REG", config.select, config.ignore):
+        return []
+    if rule_is_file_ignored("REG010", "REG", extra_ignores):
+        return []
+    meta, _ = rules["REG010"]
+    severity = config.rule_severities.get("REG010", meta.default_severity)
+    if severity == Severity.OFF:
+        return []
+
+    file_results: list[RuleResult] = []
+    for entry in entries:
+        if entry.input_model_ref is None or entry.description_arg_keys is None:
+            continue
+        model_fields = model_field_names(source_text, entry.input_model_ref.name)
+        if model_fields is None:  # not a same-file model — the cross-file pass owns it
+            continue
+        file_results.extend(parity_findings(entry, file_path, model_fields, severity))
+    return file_results
+
+
 def _check_one_file(
     file_path: Path,
     config: Config,
     root: Path,
     crossfile_floor: frozenset[tuple[str, str]] = frozenset(),
+    crossfile_active: bool = False,
 ) -> tuple[list[RuleResult], dict[int, frozenset[str]]]:
     """Run all enabled rules over a single file.
 
@@ -370,6 +426,10 @@ def _check_one_file(
             imported handler is registered under (ADR-010). Names matching this
             file augment the same-file Tier-3 floor, so a function registered
             as a tool in another module is held to the agent-facing bar here.
+        crossfile_active: True when the run performed the ``--crossfile`` pass.
+            The same-file REG010 leg (ADR-012) runs only when this is False; with
+            ``--crossfile`` the cross-file pass owns REG010 for every model,
+            same-file or imported, so the same-file leg would double-report.
 
     Returns:
         A pair of (diagnostics for this file, suppression map for this file).
@@ -421,7 +481,10 @@ def _check_one_file(
             handler_field=config.registry.handler_field,
             description_parser=parser,
         )
-        floor_names = _registry_floor_names(registry_entries, file_path, config, root)
+        module_function_names = frozenset(f.name for f in functions if f.containing_class is None)
+        floor_names = _registry_floor_names(
+            registry_entries, module_function_names, file_path, config, root
+        )
 
     # Cross-file Tier-3 floor (ADR-010): handlers registered in another module
     # and resolved to this file are held to the agent-facing bar here too.
@@ -453,6 +516,15 @@ def _check_one_file(
                 functions, registry_entries, file_path, extra_ignores, config, rules
             )
         )
+        # REG010 same-file leg (ADR-012): runs offline in the default pass. Under
+        # --crossfile the cross-file pass owns REG010 for every model, so skip
+        # here to avoid double-reporting same-file models.
+        if not crossfile_active:
+            file_results.extend(
+                _run_same_file_reg010(
+                    registry_entries, source_text, file_path, extra_ignores, config, rules
+                )
+            )
 
     # FIX003 post-pass: needs the complete violation set for this file.
     if (
@@ -485,6 +557,7 @@ def _map_files(
     config: Config,
     root: Path,
     crossfile_floor: frozenset[tuple[str, str]] = frozenset(),
+    crossfile_active: bool = False,
 ) -> list[tuple[list[RuleResult], dict[int, frozenset[str]]]]:
     """Analyze every file, serially or across worker processes per config.jobs.
 
@@ -493,13 +566,19 @@ def _map_files(
     """
     workers = _resolve_jobs(config.jobs)
     if workers == 1 or len(py_files) <= 1:
-        return [_check_one_file(f, config, root, crossfile_floor) for f in py_files]
+        return [
+            _check_one_file(f, config, root, crossfile_floor, crossfile_active) for f in py_files
+        ]
 
     # ProcessPoolExecutor: CPU-bound parsing needs real parallelism, which the
     # GIL denies to threads. map() preserves input order; results are sorted
     # again below, so completion order never affects output (determinism holds).
     worker = functools.partial(
-        _check_one_file, config=config, root=root, crossfile_floor=crossfile_floor
+        _check_one_file,
+        config=config,
+        root=root,
+        crossfile_floor=crossfile_floor,
+        crossfile_active=crossfile_active,
     )
     with ProcessPoolExecutor(max_workers=workers) as executor:
         return list(executor.map(worker, py_files))
@@ -510,13 +589,14 @@ def _run_checks(
     config: Config,
     root: Path,
     crossfile_floor: frozenset[tuple[str, str]] = frozenset(),
+    crossfile_active: bool = False,
 ) -> tuple[list[RuleResult], dict[Path, dict[int, frozenset[str]]]]:
     """Run all enabled rules over the given files and return results with suppression maps."""
     results: list[RuleResult] = []
     suppressions: dict[Path, dict[int, frozenset[str]]] = {}
 
     for file_path, (file_results, file_suppressions) in zip(
-        py_files, _map_files(py_files, config, root, crossfile_floor), strict=True
+        py_files, _map_files(py_files, config, root, crossfile_floor, crossfile_active), strict=True
     ):
         suppressions[file_path] = file_suppressions
         results.extend(file_results)
@@ -692,6 +772,14 @@ def main() -> None:
     "Requires docpact[crossfile] or a [tool.docpact.lsp] server.",
 )
 @click.option(
+    "--lsp-log",
+    "lsp_log",
+    metavar="PATH",
+    default=None,
+    help="Append the LSP server's stderr to PATH (default: discard). "
+    "Overrides [tool.docpact.lsp] log. Useful for debugging a failing server.",
+)
+@click.option(
     "--show-files",
     "show_files",
     is_flag=True,
@@ -741,6 +829,7 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     suppression_reason: str,
     changed_only: str | None,
     crossfile: bool,
+    lsp_log: str | None,
     show_files: bool,
     exit_non_zero_on_fix: bool,
     error_on_warning: bool,
@@ -777,6 +866,8 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
         config = dataclasses.replace(config, ignore=(*config.ignore, *cli_extend_ignore))
     if jobs is not None:
         config = dataclasses.replace(config, jobs=jobs)
+    if lsp_log is not None:
+        config = dataclasses.replace(config, lsp=dataclasses.replace(config.lsp, log=lsp_log))
 
     py_files = _collect_py_files(paths, config, config_root)
     if config.respect_gitignore and not no_respect_gitignore:
@@ -800,7 +891,9 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     crossfile_result = _compute_crossfile(py_files, config, config_root) if crossfile else None
     crossfile_floor = crossfile_result.floor if crossfile_result else frozenset()
 
-    results, suppressions = _run_checks(py_files, config, config_root, crossfile_floor)
+    results, suppressions = _run_checks(
+        py_files, config, config_root, crossfile_floor, crossfile_active=crossfile
+    )
 
     apply_unsafe = unsafe_fixes and do_fix
 
@@ -819,7 +912,9 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             click.echo(f"warning: {conflict}", err=True)
         # Re-run checks on modified files so reported results reflect post-fix state.
         if modified:
-            results, suppressions = _run_checks(py_files, config, config_root, crossfile_floor)
+            results, suppressions = _run_checks(
+                py_files, config, config_root, crossfile_floor, crossfile_active=crossfile
+            )
 
     # Merge REG010 findings (not fixable) before suppression, so an inline
     # REG010 suppression still applies.

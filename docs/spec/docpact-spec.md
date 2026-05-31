@@ -1,8 +1,8 @@
 # docpact — Specification
 
-**Version:** 0.4.2  
-**Status:** Active — v0.1–v0.3 complete; post-v0.3: SEM (ADR-008), REG same-file (ADR-005) + cross-file (ADR-009/010) shipped  
-**Last revised:** 2026-05-30
+**Version:** 0.4.3  
+**Status:** Active — v0.1–v0.3 complete; post-v0.3: SEM (ADR-008), REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped  
+**Last revised:** 2026-05-31
 
 ---
 
@@ -516,7 +516,9 @@ Tier assignment is deterministic. Rules are evaluated in order; the first match 
 
 After the ordered rules above assign a tier `t`, a **Tier 3 floor** is applied: if the function is named by a tool-registry entry **in the same file** (the `REG` namespace; configured via `[tool.docpact.registry]`, §15.1), its tier becomes `max(3, t)`.
 
-A registry entry — a `ToolDefinition(name="f", ...)` constructor or a `{"name": "f", ...}` dict literal in a module-level list — is the data-structure equivalent of an `@mcp.tool` decorator: the same "this function is agent-facing" signal. The floor exists so the two registration styles are held to the same documentation standard.
+A registry entry — a `ToolDefinition(name="f", ...)` constructor or a `{"name": "f", ...}` dict literal — is the data-structure equivalent of an `@mcp.tool` decorator: the same "this function is agent-facing" signal. The floor exists so the two registration styles are held to the same documentation standard. The entry is recognized in any of the module-level positions docpact extracts (ADR-011; see §15.1): a list element, an assignment value, a bare expression, or a direct argument to a registration call such as `register_tool(ToolSpec(...))`.
+
+The floor's target depends on the registration shape. For the decorator-equivalent convention where the entry `name` *is* the function name, the floor lands on that name. For the **call-based idiom** where the tool name and its handler differ (`name="search"`, `handler=search_impl`), the floor lands on the entry's `handler` when that handler is **defined in the same file** (ADR-011) — so it reaches the registered function and nothing else, never the unrelated helpers in the module. An *imported* handler is floored only under `--crossfile` (below).
 
 The floor is a **minimum, not a fixed value** — this is deliberately different from the `@mcp.tool` rule (rule 1), which returns Tier 3 unconditionally:
 
@@ -935,16 +937,25 @@ HEUR001 = "off"
 "src/public_api.py" = 2
 "src/routes.py" = 4
 
-# Tool-registry detection (REG namespace; ADR-005). Cross-checks same-file
-# tool-registration entries against the functions they name.
+# Tool-registry detection (REG namespace; ADR-005, ADR-011). Cross-checks
+# same-file tool-registration entries against the functions they name.
 [tool.docpact.registry]
 # Constructor class name(s) to treat as registry entries. Raw dict literals
 # ({"name": ..., "description": ..., "parameters": {...}}) are always recognized.
+# A configured constructor is recognized in any module-level position (ADR-011):
+# a list element, an assignment value, a bare expression, or a direct argument
+# to a registration call — e.g. register_tool(ToolSpec(name="...", ...)).
 tool_definition_class = ["ToolDefinition"]
-# Field names within each entry. Defaults shown.
+# Field names within each entry. Defaults shown. input_model_field/handler_field
+# name the input-model class reference and the handler reference (used by REG010,
+# REG011, and the call-based Tier 3 floor); a handler distinct from `name` is the
+# call-based idiom. A description given as a bare name bound once to a module-level
+# string literal is resolved through that single hop (ADR-011).
 name_field = "name"
 description_field = "description"
 parameters_field = "parameters"
+input_model_field = "input_model"
+handler_field = "handler"
 # Registry membership applies a Tier 3 floor (§10.1). Set false to disable the
 # floor project-wide; detection and REG rules still run.
 assign_tier = true
@@ -991,6 +1002,8 @@ finding_threshold = "missing"
 [tool.docpact.lsp]
 server = ["ty", "server"]                  # default; e.g. ["pyright-langserver", "--stdio"]
 timeout = 15.0                              # seconds per request / definition readiness budget
+# log = "lsp.log"                          # append server stderr here (default: discard).
+                                           # Overridable per-run with `check --lsp-log PATH`.
 ```
 
 ### 15.2 Inline suppression
@@ -1016,17 +1029,17 @@ Bare suppression without codes emits `FIX001`. Suppression with codes but withou
 | `FIX` | Fix-mode diagnostics | v0.1 |
 | `TY` | Annotation/docstring contradiction rules | v0.1 |
 | `PARSE` | Parse-time error rules (file cannot be parsed at all) | post-v0.3 |
-| `REG` | Tool-registry consistency rules (same-file `ToolDefinition`/dict registries; cross-file `REG010` via `--crossfile`) | post-v0.3 (ADR-005; cross-file ADR-009) |
+| `REG` | Tool-registry consistency rules (same-file `ToolDefinition`/dict/call-based registries; cross-file `REG010`/`REG011` via `--crossfile`) | post-v0.3 (ADR-005; call-based ADR-011; cross-file ADR-009/010) |
 | `HEUR` | Heuristic rules | v0.2 (namespace allocated v0.1; no rules yet) |
 | `SEM` | Semantic (LLM-judged) findings; advisory, via `docpact semantic` | post-v0.3 (ADR-008); SEM001 ships |
 
 `PARSE` rules fire before any structural or function-level checks. If a `PARSE` rule fires for a file, all other checks for that file are skipped — structural analysis requires a valid AST. By default the `PARSE` namespace is selected (same as `DOC`, `MCP`); add `PARSE001` to `[tool.docpact.per-file-ignores]` to silence it for generated or vendored files.
 
-The same-file `REG` rules (ADR-005) cross-check tool-registration entries against the functions they name, **within a single file**; they never resolve symbols across modules, and an entry whose `name` matches no function in the file is treated as out of scope, not chased. Only statically-evaluable entries are checked (a `parameters` built by a helper call is skipped, the same literals-only discipline as DOC021). Cross-file checking is available separately and opt-in via `--crossfile` (`REG010`, below), which delegates import resolution to a language server (ADR-009) rather than building a module graph:
+The same-file `REG` rules (ADR-005) cross-check tool-registration entries against the functions they name, **within a single file**; they never resolve symbols across modules, and an entry whose `name` matches no function in the file is treated as out of scope, not chased. Entries are recognized in any of four module-level positions (ADR-011): a list element, an assignment value, a bare expression, or a direct argument to a registration call (`register_tool(ToolSpec(...))`). Only statically-evaluable entries are checked (a `parameters` built by a helper call is skipped, the same literals-only discipline as DOC021); a description given as a bare name bound once to a module-level string literal is resolved through that single hop. Cross-file checking — for an *imported* `input_model` or `handler` — is available separately and opt-in via `--crossfile`, which delegates import resolution to a language server (ADR-009) rather than building a module graph:
 
 - **`REG001`** (error, all tiers): a `parameters.properties` key names a parameter absent from the matched function's signature — the phantom-parameter case (cf. DOC007) lifted from the docstring `Args:` section to the JSON Schema.
 - **`REG002`** (info, **off by default**): a registry entry's `name` matches no function in the file. Opt in with `--extend-select REG002` to audit registry coverage; `# nodo:`-suppressible like any rule.
-- **`REG010`** (warning, **cross-file, opt-in via `--crossfile`**, ADR-009): a tool entry names an **imported** `input_model` and documents parameters in its description's `Args:` section, but the documented args and the model's fields are out of parity — a model field the Args omit, or a documented arg with no matching field. A language server (`[tool.docpact.lsp]`, default ty) resolves the model to its defining file; docpact then extracts the fields by its own static AST pass. Runs only when `REG` is selected and `--crossfile` is passed; a missing/failing server degrades gracefully. Deterministic with a pinned server.
+- **`REG010`** (warning, ADR-009/ADR-012): a tool entry names an `input_model` and documents parameters in its description's `Args:` section, but the documented args and the model's fields are out of parity — a model field the Args omit, or a documented arg with no matching field. It has two legs, both needing only that `REG` is selected. **Same-file (ADR-012):** when the `input_model` is a class in the same file, its fields are read by AST and checked **offline, in the default `check`** — no server, no `--crossfile`; on by default, disable with `REG010 = "off"`. **Cross-file (ADR-009):** when the `input_model` is **imported**, a language server (`[tool.docpact.lsp]`, default ty) resolves the model's defining file under `--crossfile`; a missing/failing server degrades gracefully. Either way the fields are read by static AST (no execution); deterministic with a pinned server.
 - **`REG011`** (warning, **cross-file, opt-in via `--crossfile`**, ADR-010): a parameter the tool declares — its JSON-schema `properties` keys, or (absent a schema) its imported `input_model` fields — is not accepted by its **imported** `handler`'s signature. The cross-file analogue of REG001, resolved the same way. Phantom-direction only (a signature parameter not declared is legitimate non-exposure, as for REG003). Two low-false-positive guards: skipped when the handler takes the model as a single typed parameter (it receives the whole model, not unpacked fields), or when it accepts `**kwargs` (any key is valid). Same `--crossfile` gating and graceful degradation as REG010.
 - **`REG003`** *(reserved, not shipped)*: signature parameter absent from the registry schema. Deferred — deliberate non-exposure of a parameter is legitimate and would produce false positives.
 - **`REG050`** *(reserved, not shipped — out of scope)*: registry `description` diverges from the docstring summary. This requires judging whether two free-text strings mean the same thing; any similarity heuristic reproduces the DOC051 false-positive failure mode. docpact enforces structure, not meaning — this ships only behind a precise, non-heuristic detector, which does not exist. Per-parameter `properties[*].description` text is likewise unenforceable structurally and out of scope.

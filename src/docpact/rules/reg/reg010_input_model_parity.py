@@ -1,17 +1,24 @@
-"""REG010 — tool Args section out of parity with its imported input model.
+"""REG010 — tool Args section out of parity with its input model.
 
-Cross-file rule (ADR-009). A tool-registration entry that names an imported
-Pydantic model as its ``input_model`` and documents parameters in its
-description's ``Args:`` section asserts two things that must agree: the
-documented args and the model's actual fields. REG010 fires when they drift —
-a model field the Args don't document, or an Args entry with no matching field.
+A tool-registration entry that names a Pydantic model as its ``input_model``
+and documents parameters in its description's ``Args:`` section asserts two
+things that must agree: the documented args and the model's actual fields.
+REG010 fires when they drift — a model field the Args don't document, or an
+Args entry with no matching field.
 
-This is the cross-file analogue of REG001's same-file phantom-parameter check.
-It runs only under ``docpact check --crossfile`` (opt-in) and only when a
-language server resolves the model's defining file (ADR-009); the registered
-``check`` function below is an inert stub that keeps REG010 in ``list-rules``.
-The resolution + AST extraction live in ``docpact.crossfile``; the pure
-comparison is ``parity_findings`` here.
+REG010 has two legs that share this one comparison (``parity_findings`` here):
+
+- **Same-file (ADR-012)** — when the ``input_model`` is a class defined in the
+  same file, its fields are read by AST and compared offline, in the default
+  ``docpact check``. No language server, no ``--crossfile``. The CLI drives this
+  leg directly (``_run_same_file_reg010``).
+- **Cross-file (ADR-009)** — when the ``input_model`` is imported, a language
+  server resolves its defining file under ``docpact check --crossfile`` (opt-in)
+  and ``docpact.crossfile`` does the AST extraction.
+
+This is the registry analogue of REG001's phantom-parameter check. The
+registered ``check`` function below is an inert stub (both legs call
+``parity_findings`` out of band) that keeps REG010 in ``list-rules``.
 
 Direction matters for the message but not the verdict: both a missing-in-doc
 and a missing-in-model discrepancy are real drift and each emits one finding.

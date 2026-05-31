@@ -70,15 +70,72 @@ on-ramp) is the floor and has a higher false-positive rate; a stronger model has
 fewer. SEM is advisory and **never gates `check`** for exactly this reason. See
 [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
 
+### Tool-registry checks (`REG`)
+
+Many projects expose functions to an LLM not through an `@mcp.tool` decorator but
+through a **registration record** — a `ToolDefinition`/`ToolSpec` carrying the
+name, description, input model, and handler. Add `REG` to `select` and `docpact`
+cross-checks those records against the code, **offline, in the default `check`**.
+
+The record is recognized wherever it appears at module level — a `list` of them,
+an assignment, a bare expression, or passed straight to a registration call:
+
+```python
+class DescribeInput(BaseModel):
+    provider_id: str
+    region: str
+
+_DESC = """Describe a provider.
+
+Args:
+    provider_id: The provider id.
+    flags: A field the model does not have.
+"""
+
+register_tool(ToolSpec(
+    name="describe_provider",
+    description=_DESC,                 # a module-level constant is resolved
+    input_model=DescribeInput,         # a class defined in this same file
+    service_function=describe_provider_tool,
+))
+```
+
+```toml
+[tool.docpact]
+select = ["DOC", "REG"]
+
+[tool.docpact.registry]
+tool_definition_class = ["ToolSpec"]   # your record class
+handler_field = "service_function"     # map your field names (defaults: name/description/input_model/handler)
+```
+
+```
+$ docpact check tools.py            # no --crossfile, no LSP
+tools.py:14:14: REG010 input model 'DescribeInput' field 'region' is not documented in tool 'describe_provider' Args section
+tools.py:14:14: REG010 tool 'describe_provider' Args entry 'flags' has no matching field in input model 'DescribeInput'
+```
+
+- **REG001** — a JSON-Schema `parameters` key naming a parameter the function lacks.
+- **REG010 (same-file)** — the documented `Args:` is out of parity with a
+  **same-file** `input_model`'s fields. On by default once `REG` is selected;
+  disable with `REG010 = "off"` under `[tool.docpact.rules]`.
+
+It also applies a **Tier-3 floor** to the registered handler — and *only* that
+handler, even when the tool name differs from the function name (`name="describe_provider"`,
+`service_function=describe_provider_tool`). Unrelated helpers in the same module
+keep their tier. See [ADR-011](docs/adr/ADR-011-call-based-tool-registration.md)
+and [ADR-012](docs/adr/ADR-012-same-file-reg010-default-pass.md).
+
 ### Cross-file mode (`--crossfile`)
 
-Opt-in, and off by default — the standard `check` is per-file, offline, and
-fast. `--crossfile` runs the cross-file `REG` rules against tool-registry entries
-that reference **imported** symbols:
+The standard `check` is per-file and offline. `--crossfile` extends the `REG`
+rules to tool-registry entries that reference **imported** symbols (a model or
+handler defined in another module), resolving them via a language server:
 
-- **REG010** — a tool's documented `Args:` is out of parity with its imported
-  `input_model` fields (a model field the docs omit, or a documented arg with no
-  matching field).
+- **REG010 (cross-file)** — a tool's documented `Args:` is out of parity with its
+  imported `input_model` fields (a model field the docs omit, or a documented arg
+  with no matching field). Same rule as the same-file leg above; `--crossfile`
+  extends its reach to imported models.
 - **REG011** — a parameter the tool declares (its JSON schema, or its imported
   `input_model` fields) is not accepted by its imported `handler`'s signature —
   the cross-file analogue of REG001.
@@ -178,8 +235,8 @@ a warm server, not more concurrency. Run it once on your repo to know your numbe
 | `MCP` | MCP001 | MCP-specific conflicts: decorator `description=` duplicates docstring `MCP:` section |
 | `FIX` | FIX001–FIX004 | Suppression hygiene: bare suppression comments, missing `-- reason`, stale suppressions, misplaced suppression comments |
 | `PARSE` | PARSE001 | Parse-time errors: file contains a Python syntax error and cannot be checked; fires before all other rules |
-| `REG` *(opt-in)* | REG001–REG002 | Tool-registry consistency: a same-file `ToolDefinition`/dict registry whose JSON-Schema parameter is absent from the function signature. Add `REG` to `select` to enable. |
-| `REG` *(opt-in, cross-file)* | REG010, REG011 | Cross-file: a tool entry's documented `Args:` out of parity with its **imported** `input_model` fields (REG010), or a declared parameter the **imported** `handler` does not accept (REG011). Resolved via an LSP server; run only under `docpact check --crossfile`. See below. |
+| `REG` *(opt-in)* | REG001–REG002, REG010 | Tool-registry consistency, same-file and offline: a `ToolDefinition`/`ToolSpec`/dict record (in a list, an assignment, or a registration call like `register_tool(...)`) whose JSON-Schema parameter is absent from the signature (REG001), or whose documented `Args:` is out of parity with a same-file `input_model`'s fields (REG010). Add `REG` to `select`. See below. |
+| `REG` *(opt-in, cross-file)* | REG010, REG011 | Cross-file: a tool entry's documented `Args:` out of parity with its **imported** `input_model` fields (REG010, imported-model leg), or a declared parameter the **imported** `handler` does not accept (REG011). Resolved via an LSP server; run only under `docpact check --crossfile`. See below. |
 | `SEM` *(opt-in, advisory)* | SEM001 | Meaning, not structure: LLM-judged cargo-cult restatement, an unsurfaced precondition/constraint, an empty Returns. Run via `docpact semantic` — never part of `check`; non-deterministic and advisory. |
 
 Full rule documentation: [`docs/rules/`](docs/rules/).
@@ -207,7 +264,7 @@ Most projects need no tier config. When automatic assignment doesn't fit — for
 
 Patterns are anchored to the directory containing `pyproject.toml`. `src/domain/mcp/tools/*.py` matches files relative to the project root, so it works regardless of where `docpact check` is invoked from.
 
-If the custom registry is a same-file `list[ToolDefinition]` (or list of `{"name", "description", "parameters"}` dicts), enabling the `REG` namespace is more precise than a glob: functions named by a registry entry are automatically held to a Tier 3 floor — only the registered functions, not every function in the file. See the `[tool.docpact.registry]` config below.
+If the custom registry is a same-file record — a `list[ToolDefinition]`, a list of `{"name", "description", "parameters"}` dicts, or a `register_tool(ToolSpec(...))` call — enabling the `REG` namespace is more precise than a glob: only the function each entry registers is held to the Tier 3 floor, not every function in the file. The floor follows the entry's `handler` when the tool name and function name differ. See the `[tool.docpact.registry]` config below.
 
 ## Adopting in an existing codebase
 
@@ -246,7 +303,13 @@ jobs = 1                         # parallel workers; 1 = serial (default), 0 = a
 
 # Opt-in: cross-check same-file tool registries (REG namespace). Add "REG" to select.
 [tool.docpact.registry]
-tool_definition_class = ["ToolDefinition"]   # constructor name(s); flat dict literals also recognized
+tool_definition_class = ["ToolDefinition"]   # record class name(s); flat dict literals also recognized
+# Recognized in a list, an assignment, a bare expression, or a registration call
+# such as register_tool(ToolSpec(...)). Map your field names if they differ:
+# name_field = "name"
+# description_field = "description"          # a module-level string constant is resolved
+# input_model_field = "input_model"         # same-file class → offline REG010
+# handler_field = "handler"                  # the function the Tier 3 floor lands on
 # assign_tier = true                         # registry membership → Tier 3 floor (default)
 # no_tier_floor = ["src/legacy/**"]          # files where the floor is not applied
 
@@ -258,10 +321,13 @@ api_base = "https://models.github.ai/inference"   # e.g. GitHub Models (free to 
 api_key_env = "GITHUB_TOKEN"                 # name of the env var holding the key — never the key
 # min_tier = 3                               # scope to agent-facing tools (default 3)
 
-# Opt-in: cross-file analysis (REG010) via an LSP server. Used only by `check --crossfile`.
+# Opt-in: cross-file analysis (imported models/handlers) via an LSP server.
+# Used only by `check --crossfile`; the same-file REG010 leg needs none of this.
 [tool.docpact.lsp]
 server = ["ty", "server"]                    # any LSP-conformant server: ["pyright-langserver", "--stdio"], …
 # timeout = 15.0                             # seconds per request / definition readiness budget
+# log = "lsp.log"                            # append the server's stderr here (default: discard);
+                                             # override per-run with `check --lsp-log PATH`
 ```
 
 Inline suppression goes on the `def` keyword line:
@@ -321,7 +387,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 1008 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 1029 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 

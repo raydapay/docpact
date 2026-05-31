@@ -85,14 +85,17 @@ class LspConfig:
     Drives the opt-in cross-file resolution layer. ``server`` is the language
     server command and its arguments (defaulting to ty); any LSP-conformant
     server is a drop-in swap. ``timeout`` bounds each request and the definition
-    readiness retry. Off until cross-file analysis is invoked — never touched by
-    the default `check`.
+    readiness retry. ``log`` is an optional file path the server's stderr is
+    appended to; when None (the default) server stderr is discarded so a chatty
+    server cannot drown docpact's own output. Off until cross-file analysis is
+    invoked — never touched by the default `check`.
 
     Stability: beta
     """
 
     server: tuple[str, ...] = ("ty", "server")
     timeout: float = 15.0
+    log: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,7 +336,7 @@ def _parse_lsp(raw: object) -> LspConfig:
     Raises:
         ConfigError: ``raw`` is not a table, or a key has the wrong type
             (``server`` not a non-empty list of strings, ``timeout`` not a
-            positive number).
+            positive number, ``log`` not a string).
     """
     if not isinstance(raw, dict):
         raise ConfigError("lsp: expected a table")
@@ -354,7 +357,14 @@ def _parse_lsp(raw: object) -> LspConfig:
             raise ConfigError("lsp.timeout: must be a positive number")
         timeout = float(v)
 
-    return LspConfig(server=server, timeout=timeout)
+    log = defaults.log
+    if "log" in data:
+        v = data["log"]
+        if not isinstance(v, str):
+            raise ConfigError("lsp.log: must be a string path")
+        log = v
+
+    return LspConfig(server=server, timeout=timeout, log=log)
 
 
 def _parse_registry(raw: object) -> RegistryConfig:

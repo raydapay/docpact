@@ -92,6 +92,12 @@ def main() -> int:
     """Run the fake server loop until exit."""
     mode = sys.argv[1] if len(sys.argv) > 1 else "location"
     target_uri = sys.argv[2] if len(sys.argv) > 2 else _DEF_URI
+    if mode == "stderr-noise":
+        # Emit a diagnostic line to stderr to exercise --lsp-log capture, then
+        # behave like the default "location" mode.
+        sys.stderr.write("fake-server: Confusing indentation for continuation line\n")
+        sys.stderr.flush()
+        mode = "location"
     definition_calls = 0
     while True:
         msg = _read_message()

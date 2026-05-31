@@ -13,9 +13,11 @@ Copy this file to those names if needed; treat them as equivalent.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
-DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002.
+DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001.
 DOC051 (Annotated constraint duplication) and DOC098 (doctest) are reserved/deferred.
-REG is opt-in (add `REG` to `select`). See PROGRESS.md for details.
+REG and SEM are opt-in (add `REG`/`SEM` to `select`); SEM001 is advisory via `docpact semantic`.
+REG011 and REG010's imported-model leg are cross-file (`--crossfile`); REG010's same-file leg
+runs offline in the default `check`. See PROGRESS.md for details.
 
 No active milestone. See PROGRESS.md for v0.3 scope and what shipped.
 
@@ -53,6 +55,17 @@ Key facts a fresh session needs:
   definitive visibility contract: listed → Tier 2 floor; absent → Tier 1 ceiling.
 - `allow_pragma = true` in `[tool.docpact]` enables `# docpact: tier=N` inline on
   `def` lines to override the assigned tier for that function only. Off by default.
+- Registry extraction (`parser/registry.py`) recognizes a configured constructor in four
+  module-level positions: list element, assignment value, bare expression, and direct call
+  argument (`register_tool(ToolSpec(...))`) — ADR-011. A bare-`Name` `description` bound once
+  to a module-level string literal is resolved one hop. The Tier-3 floor keys on a same-file
+  `handler_ref` when the tool `name` ≠ the function name. `registration_call` config is reserved,
+  not shipped.
+- REG010 has two legs sharing `parity_findings`: a same-file leg in the default `check`
+  (`_run_same_file_reg010` in `cli.py`, gated off when `crossfile_active`) and the cross-file
+  leg in `crossfile/resolver.py`. ADR-012.
+- `[tool.docpact.lsp] log = "path"` (or `check --lsp-log PATH`) appends the LSP server's stderr
+  to a file; default is discard. The server subprocess otherwise routes stderr to `DEVNULL`.
 
 **The project owner is Ray.** Address him directly when asking questions. Ray's
 working preferences are documented below under "Working with Ray."

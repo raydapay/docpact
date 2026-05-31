@@ -1,11 +1,21 @@
 """Extract tool-registration entries from a single source file via stdlib ast.
 
-Recognizes two co-located registration shapes inside a module-level list:
+Recognizes a configured constructor class (and raw dict literals) in four
+bounded module-level positions (ADR-011):
 
-  1. A constructor call to a configured class:
+  1. An element of a module-level list literal (the original shape):
          BOT_TOOLS = [ToolDefinition(name="search", description="...", parameters={...})]
-  2. A raw dict literal (OpenAI/Bedrock function-calling style):
          TOOLS = [{"name": "search", "description": "...", "parameters": {...}}]
+  2. An assignment value:        SPEC = ToolSpec(name="search", ...)
+  3. A bare expression statement: ToolSpec(name="search", ...)
+  4. A direct argument to a module-level call (the builder idiom):
+         register_tool(ToolSpec(name="search", ...))
+
+Recursion is bounded to exactly these positions: docpact descends one level into
+a wrapping call's arguments (and into a list argument's elements) but no further
+— not into nested calls beyond one level, comprehensions, conditionals, loops,
+or function bodies. Raw dict literals are recognized only as list elements or as
+a call argument, never as a bare/assigned statement.
 
 Same-file only. This module never resolves imports or follows a name to a
 function in another module — it produces the literal facts present in this
@@ -15,7 +25,10 @@ caller's job (a string-name match against same-file definitions). See ADR-005.
 Literals-only, like DOC021: an entry whose ``name`` is not a string literal is
 not produced at all (it cannot be correlated); an entry whose ``parameters``
 is not a static dict literal yields ``property_keys = None`` so the REG001
-cross-check is skipped rather than guessed.
+cross-check is skipped rather than guessed. A ``description`` given as a bare
+``Name`` bound once to a module-level string literal is resolved through that
+single hop (ADR-011); anything else (an f-string, a call, a multiply-bound or
+imported name) stays unresolved, exactly as a non-literal would.
 
 Two further facts are captured for the opt-in cross-file pass (ADR-009), and
 only when statically present: the ``input_model`` reference (a bare ``Name``,
@@ -51,6 +64,7 @@ class _Fields:
     input_model: str
     handler: str
     parser: DocstringParser | None
+    string_constants: dict[str, ast.expr]  # module-level NAME -> single string-literal binding
 
 
 def extract_tool_registry(
@@ -91,9 +105,11 @@ def extract_tool_registry(
         if the source cannot be parsed — PARSE001 owns parse failures.
 
     Constraints:
-        Only module-level assignments whose value is a list literal are
-        inspected. Function-local and class-body registries are ignored, as
-        are registries built by append/comprehension/spread (not literals).
+        Only module-level statements are inspected, in the four bounded
+        positions listed in the module docstring (list element, assignment
+        value, bare expression, direct call argument). Function-local and
+        class-body registries are ignored, as are registries built by
+        comprehension/spread or nested more than one call deep (not literals).
 
     Stability: beta
     """
@@ -109,31 +125,120 @@ def extract_tool_registry(
         input_model=input_model_field,
         handler=handler_field,
         parser=description_parser,
+        string_constants=_string_constants(tree),
     )
     entries: list[ToolRegistryEntry] = []
     class_set = frozenset(tool_classes)
     for node in tree.body:
-        value = _assignment_value(node)
-        if not isinstance(value, ast.List):
+        value = _statement_expr(node)
+        if value is None:
             continue
-        for elt in value.elts:
+        for elt in _candidate_elements(value, class_set):
             entry = _entry_from_element(elt, class_set, fields)
             if entry is not None:
                 entries.append(entry)
     return entries
 
 
-def _assignment_value(node: ast.stmt) -> ast.expr | None:
-    """Return the assigned value of a module-level assignment, or None.
+def _statement_expr(node: ast.stmt) -> ast.expr | None:
+    """Return the inspectable expression of a module-level statement, or None.
 
-    Handles both ``X = [...]`` (ast.Assign) and ``X: list[T] = [...]``
-    (ast.AnnAssign). Returns None for any other statement.
+    Covers the three statement forms that can carry a registry entry: a bare
+    expression (``register_tool(...)``), an assignment (``X = ...``), and an
+    annotated assignment (``X: T = ...``). Returns None for any other statement
+    and for an annotated assignment with no value.
     """
+    if isinstance(node, ast.Expr):
+        return node.value
     if isinstance(node, ast.Assign):
         return node.value
     if isinstance(node, ast.AnnAssign):
         return node.value
     return None
+
+
+def _candidate_elements(value: ast.expr, class_set: frozenset[str]) -> list[ast.expr]:
+    """Return the candidate entry nodes reachable from a statement expression.
+
+    Bounded to one level of nesting (ADR-011): a list yields its elements; a
+    configured constructor call is itself a candidate; any other call (a
+    wrapper such as ``register_tool``) yields the constructor/dict nodes among
+    its direct arguments, descending one further level into a list argument.
+    """
+    if isinstance(value, ast.List):
+        return list(value.elts)
+    if not isinstance(value, ast.Call):
+        return []
+    if _is_tool_constructor(value, class_set):
+        return [value]
+    # A wrapping call (e.g. register_tool(...)): inspect its direct arguments
+    # one level, plus the elements of a list argument.
+    candidates: list[ast.expr] = []
+    for arg in (*value.args, *(kw.value for kw in value.keywords)):
+        if isinstance(arg, ast.List):
+            candidates.extend(arg.elts)
+        elif isinstance(arg, (ast.Call, ast.Dict)):
+            candidates.append(arg)
+    return candidates
+
+
+def _is_tool_constructor(call: ast.Call, class_set: frozenset[str]) -> bool:
+    """Return True if a call's dotted callee matches a configured class name.
+
+    Matches on the final dotted component, so both ``ToolSpec(...)`` and
+    ``mod.ToolSpec(...)`` qualify when ``ToolSpec`` is configured.
+    """
+    callee = _dotted_name(call.func)
+    if callee is None:
+        return False
+    return callee.split(".")[-1] in {c.split(".")[-1] for c in class_set}
+
+
+def _string_constants(tree: ast.Module) -> dict[str, ast.expr]:
+    """Map each module-level name bound exactly once to a string literal.
+
+    Builds the resolution table for indirect descriptions (ADR-011): a bare
+    ``Name`` description is resolved through this single hop. A name assigned
+    more than once at module level — by any combination of ``=``, ``: T =``, or
+    augmented assignment — is ambiguous and excluded, so only an unambiguous
+    single binding to a string literal is resolvable. Tuple-unpacking and
+    non-string bindings are not collected.
+    """
+    table: dict[str, ast.expr] = {}
+    seen: set[str] = set()
+
+    def _bind(name: str, value: ast.expr | None) -> None:
+        """Record a binding; a second binding of the same name drops it as ambiguous."""
+        if name in seen:  # second binding — ambiguous, drop any resolvable value
+            table.pop(name, None)
+            return
+        seen.add(name)
+        if value is not None and isinstance(value, ast.Constant) and isinstance(value.value, str):
+            table[name] = value
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    _bind(target.id, node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            _bind(node.target.id, node.value)
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+            _bind(node.target.id, None)  # += etc. is a rebind: mark ambiguous
+    return table
+
+
+def _resolve_description(node: ast.expr | None, fields: _Fields) -> ast.expr | None:
+    """Resolve a bare-Name description through one hop to its string literal.
+
+    Returns the bound string-literal node when ``node`` is a ``Name`` present in
+    the module's single-binding string-constant table; otherwise returns ``node``
+    unchanged. The downstream description helpers then see a literal exactly as
+    if it had been written inline.
+    """
+    if isinstance(node, ast.Name):
+        return fields.string_constants.get(node.id, node)
+    return node
 
 
 def _entry_from_element(
@@ -160,14 +265,13 @@ def _entry_from_call(
     fields: _Fields,
 ) -> ToolRegistryEntry | None:
     """Build an entry from a ``ToolDefinition(name=..., ...)`` constructor call."""
-    callee = _dotted_name(call.func)
-    if callee is None or callee.split(".")[-1] not in {c.split(".")[-1] for c in class_set}:
+    if not _is_tool_constructor(call, class_set):
         return None
     kwargs = {kw.arg: kw.value for kw in call.keywords if kw.arg is not None}
     name = _string_value(kwargs.get(fields.name))
     if name is None:
         return None  # dynamic name — cannot correlate
-    description = kwargs.get(fields.description)
+    description = _resolve_description(kwargs.get(fields.description), fields)
     return ToolRegistryEntry(
         name=name,
         line=call.lineno,
@@ -192,7 +296,7 @@ def _entry_from_dict(
     name = _string_value(items[fields.name])
     if name is None:
         return None  # dynamic name — cannot correlate
-    description = items.get(fields.description)
+    description = _resolve_description(items.get(fields.description), fields)
     return ToolRegistryEntry(
         name=name,
         line=node.lineno,

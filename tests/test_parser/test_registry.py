@@ -177,8 +177,51 @@ def build():
     assert _extract(src) == []
 
 
-def test_non_list_assignment_ignored() -> None:
+def test_assignment_to_bare_constructor_extracted() -> None:
+    # ADR-011 position (b): a constructor assigned to a name (not in a list) is
+    # a registration entry, not ignored.
     src = 'SINGLE = ToolDefinition(name="f", parameters={"properties": {"x": {}}})'
+    entries = _extract(src)
+    assert [e.name for e in entries] == ["f"]
+    assert entries[0].property_keys == frozenset({"x"})
+
+
+def test_bare_constructor_expression_extracted() -> None:
+    # ADR-011 position (a): a constructor as a bare expression statement.
+    src = 'ToolDefinition(name="f", parameters={"properties": {"x": {}}})'
+    assert [e.name for e in _extract(src)] == ["f"]
+
+
+def test_constructor_wrapped_in_registration_call_extracted() -> None:
+    # ADR-011 position (d): the builder idiom — constructor as a direct argument
+    # to a wrapping call such as register_tool(...).
+    src = 'register_tool(ToolDefinition(name="f", parameters={"properties": {"x": {}}}))'
+    entries = _extract(src)
+    assert [e.name for e in entries] == ["f"]
+    assert entries[0].property_keys == frozenset({"x"})
+
+
+def test_constructors_in_list_argument_to_call_extracted() -> None:
+    # ADR-011 position (d), list form: register_many([ToolDefinition(...), ...]).
+    src = """
+register_many([
+    ToolDefinition(name="a", parameters={"properties": {}}),
+    ToolDefinition(name="b", parameters={"properties": {}}),
+])
+"""
+    assert sorted(e.name for e in _extract(src)) == ["a", "b"]
+
+
+def test_non_constructor_call_argument_not_chased_deeper() -> None:
+    # Bounded recursion: docpact looks one level into a call's arguments, not
+    # into a further nested call. A constructor inside another call's call arg
+    # is not extracted.
+    src = 'register_tool(wrap(ToolDefinition(name="f", parameters={"properties": {}})))'
+    assert _extract(src) == []
+
+
+def test_wrapping_call_with_no_constructor_yields_nothing() -> None:
+    src = 'configure(level="info", retries=3)'
     assert _extract(src) == []
 
 
@@ -342,3 +385,66 @@ def test_description_arg_keys_in_dict_entry() -> None:
     )
     keys = _extract(src, description_parser=GoogleParser())[0].description_arg_keys
     assert keys == frozenset({"query", "limit"})
+
+
+# --- indirect (Name-bound) descriptions (ADR-011) -----------------------------
+
+
+def test_indirect_description_resolved_through_single_binding() -> None:
+    # A bare Name bound once to a module-level string literal is resolved one hop.
+    src = f"""
+_DESC = {_DESC_WITH_ARGS!r}
+TOOLS = [ToolDefinition(name="f", description=_DESC)]
+"""
+    entry = _extract(src, description_parser=GoogleParser())[0]
+    assert entry.description_arg_keys == frozenset({"query", "limit"})
+    assert entry.description_text == _DESC_WITH_ARGS
+    assert entry.has_description is True
+
+
+def test_indirect_description_in_registration_call() -> None:
+    # The adopter shape: indirect description + builder call together.
+    src = f"""
+_DESC = {_DESC_WITH_ARGS!r}
+register_tool(ToolSpec(name="f", description=_DESC, service_function=handler))
+"""
+    entry = _extract(
+        src,
+        tool_classes=("ToolSpec",),
+        handler_field="service_function",
+        description_parser=GoogleParser(),
+    )[0]
+    assert entry.description_arg_keys == frozenset({"query", "limit"})
+
+
+def test_indirect_description_annotated_binding_resolved() -> None:
+    src = f"""
+_DESC: str = {_DESC_WITH_ARGS!r}
+TOOLS = [ToolDefinition(name="f", description=_DESC)]
+"""
+    keys = _extract(src, description_parser=GoogleParser())[0].description_arg_keys
+    assert keys == frozenset({"query", "limit"})
+
+
+def test_indirect_description_multiply_bound_not_resolved() -> None:
+    # Ambiguous: a name bound more than once at module level stays unresolved.
+    src = f"""
+_DESC = {_DESC_WITH_ARGS!r}
+_DESC = "Other."
+TOOLS = [ToolDefinition(name="f", description=_DESC)]
+"""
+    entry = _extract(src, description_parser=GoogleParser())[0]
+    assert entry.description_arg_keys is None
+    assert entry.description_text is None
+
+
+def test_indirect_description_nonliteral_binding_not_resolved() -> None:
+    # A name bound to a non-literal (an f-string here) is not resolved.
+    src = """
+_DESC = f"Computed {value}."
+TOOLS = [ToolDefinition(name="f", description=_DESC)]
+"""
+    entry = _extract(src, description_parser=GoogleParser())[0]
+    assert entry.description_arg_keys is None
+    assert entry.description_text is None
+    assert entry.has_description is True  # present-but-computed, like inline non-literals

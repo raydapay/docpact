@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
     from types import TracebackType
+    from typing import IO
 
 
 class LSPError(Exception):
@@ -201,7 +202,14 @@ class LSPClient:
     Stability: beta
     """
 
-    def __init__(self, server_cmd: tuple[str, ...], root: Path, *, timeout: float = 15.0) -> None:
+    def __init__(
+        self,
+        server_cmd: tuple[str, ...],
+        root: Path,
+        *,
+        timeout: float = 15.0,
+        log_file: Path | None = None,
+    ) -> None:
         """Configure the server command, workspace root, and request timeout.
 
         Args:
@@ -211,6 +219,10 @@ class LSPClient:
                 server can index the project.
             timeout: Seconds to wait for a single response, and the overall
                 budget for the definition readiness retry. Must be positive.
+            log_file: Optional path the server's stderr is appended to. When
+                None (the default) server stderr is discarded, so a chatty
+                server cannot drown docpact's output. A path that cannot be
+                opened falls back to discarding rather than failing the run.
 
         Raises:
             LSPError: ``server_cmd`` is empty.
@@ -222,6 +234,8 @@ class LSPClient:
         self._cmd = list(server_cmd)
         self._root = root
         self._timeout = timeout
+        self._log_file = log_file
+        self._log_handle: IO[str] | None = None
         self._proc: subprocess.Popen[bytes] | None = None
         self._queue: queue.Queue[dict[str, object] | None] = queue.Queue()
         self._next_id = 0
@@ -269,14 +283,16 @@ class LSPClient:
 
     def _spawn(self) -> None:
         """Start the server subprocess and the stdout reader thread."""
+        stderr = self._open_log()
         try:
             self._proc = subprocess.Popen(
                 self._cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=stderr,
             )
         except (OSError, ValueError) as exc:
+            self._close_log()  # __exit__ won't run if __enter__ raises here
             raise LSPError(
                 f"could not start LSP server {self._cmd!r}: {exc}. "
                 f"Is it installed? Configure [tool.docpact.lsp] server."
@@ -284,6 +300,23 @@ class LSPClient:
         if self._proc.stdin is None or self._proc.stdout is None:
             raise LSPError("LSP server did not provide stdio pipes")
         threading.Thread(target=_reader, args=(self._proc.stdout, self._queue), daemon=True).start()
+
+    def _open_log(self) -> int | IO[str]:
+        """Return the stderr target for the server subprocess.
+
+        Opens the configured log path for appending and remembers the handle so
+        it is closed on shutdown. Falls back to ``DEVNULL`` when no path is set
+        or the path cannot be opened — a log target is a convenience, never a
+        reason to fail the run.
+        """
+        if self._log_file is None:
+            return subprocess.DEVNULL
+        try:
+            handle = self._log_file.open("a", encoding="utf-8")
+        except OSError:
+            return subprocess.DEVNULL
+        self._log_handle = handle
+        return handle
 
     def _send(self, obj: dict[str, object]) -> None:
         """Frame and write a JSON-RPC message to the server's stdin."""
@@ -452,3 +485,11 @@ class LSPClient:
         except subprocess.TimeoutExpired:
             proc.kill()
         self._proc = None
+        self._close_log()
+
+    def _close_log(self) -> None:
+        """Close the stderr log handle if one was opened, swallowing errors."""
+        if self._log_handle is not None:
+            with contextlib.suppress(OSError):
+                self._log_handle.close()
+            self._log_handle = None

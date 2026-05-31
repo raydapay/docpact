@@ -12,11 +12,34 @@ ships; do not put status in CLAUDE.md.
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
 DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001.
 DOC051 (Annotated constraint dup) and DOC098 (doctest) reserved/deferred; REG003/REG050/DOC020 reserved.
-REG and SEM are opt-in; SEM001 is advisory via `docpact semantic` (ADR-008); REG010/REG011 are
-cross-file, run only under `docpact check --crossfile` (ADR-009/010).
+REG and SEM are opt-in; SEM001 is advisory via `docpact semantic` (ADR-008). REG011 and the
+imported-model leg of REG010 are cross-file (`docpact check --crossfile`, ADR-009/010); REG010's
+same-file leg runs offline in the default `check` (ADR-012). Registry extraction recognizes
+call-based registration — `register_tool(ToolSpec(...))`, indirect descriptions, handler-keyed
+Tier-3 floor (ADR-011).
 (Run `docpact list-rules` for the authoritative current set.)
 
 No active milestone.
+
+---
+
+## Post-v0.3 — call-based registration + offline REG010 + LSP log (ADR-011, ADR-012) — SHIPPED
+
+Adopter feedback: a hand-rolled MCP surface registering tools via
+`register_tool(ToolSpec(...))` got zero REG/MCP findings — the extractor only saw
+module-level `list` literals, so nothing was extracted. Shipped, gated on Ray's accepted ADRs:
+
+- **ADR-011 — call-based registration.** Extraction recognizes a configured constructor in four
+  bounded module-level positions (list element, assignment value, bare expression, direct call
+  argument). Bare-`Name` descriptions bound once to a module-level string literal are resolved
+  one hop. The Tier-3 floor lands on a same-file `handler_ref` when the tool name and handler
+  differ — so it reaches the registered function, not the whole file (the noise adopters hit).
+- **ADR-012 — offline REG010.** REG010 gains a same-file leg in the default `check` (default-on,
+  `REG010 = "off"` to disable); the cross-file leg is unchanged and still `--crossfile`-gated. A
+  `crossfile_active` guard prevents double-reporting under `--crossfile`.
+- **`--lsp-log PATH` / `[tool.docpact.lsp] log`.** Optionally append the LSP server's stderr to a
+  file (default: discard, as before). Not an ADR — server stderr was already discarded; this just
+  makes a failing server debuggable.
 
 ---
 

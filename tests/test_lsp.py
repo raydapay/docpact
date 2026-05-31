@@ -13,16 +13,18 @@ from pathlib import Path
 
 import pytest
 
-from docpact.config import LspConfig, load_config
+from docpact.config import ConfigError, LspConfig, load_config
 from docpact.lsp import LSPClient, LSPError, LspLocation
 from docpact.lsp.client import _normalize_locations
 
 _FAKE = Path(__file__).parent / "fixtures" / "fake_lsp_server.py"
 
 
-def _client(mode: str, root: Path, *, timeout: float = 5.0) -> LSPClient:
+def _client(
+    mode: str, root: Path, *, timeout: float = 5.0, log_file: Path | None = None
+) -> LSPClient:
     """Build an LSPClient wired to the fake server in the given mode."""
-    return LSPClient((sys.executable, str(_FAKE), mode), root, timeout=timeout)
+    return LSPClient((sys.executable, str(_FAKE), mode), root, timeout=timeout, log_file=log_file)
 
 
 # --- config -------------------------------------------------------------------
@@ -38,10 +40,41 @@ def test_lsp_defaults_when_absent(tmp_path: Path) -> None:
 def test_lsp_full_parse(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         '[tool.docpact.lsp]\nserver = ["pyright-langserver", "--stdio"]\ntimeout = 30\n'
+        'log = "lsp.log"\n'
     )
     lsp = load_config(tmp_path).config.lsp
     assert lsp.server == ("pyright-langserver", "--stdio")
     assert lsp.timeout == 30.0
+    assert lsp.log == "lsp.log"
+
+
+def test_lsp_log_defaults_to_none(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC"]\n')
+    assert load_config(tmp_path).config.lsp.log is None
+
+
+def test_lsp_log_must_be_string(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[tool.docpact.lsp]\nlog = 5\n")
+    with pytest.raises(ConfigError, match=r"lsp\.log"):
+        load_config(tmp_path)
+
+
+def test_lsp_log_captures_server_stderr(tmp_path: Path) -> None:
+    # With a log path, the server's stderr is appended there rather than discarded.
+    log = tmp_path / "lsp.log"
+    with _client("stderr-noise", tmp_path, log_file=log) as client:
+        client.did_open(_FAKE)  # any didOpen; the noise is written at startup
+    assert log.exists()
+    assert "Confusing indentation" in log.read_text(encoding="utf-8")
+
+
+def test_lsp_log_unwritable_path_falls_back_to_discard(tmp_path: Path) -> None:
+    # A log path that cannot be opened must not fail the run.
+    bad = tmp_path / "missing-dir" / "lsp.log"  # parent does not exist
+    with _client("location", tmp_path, log_file=bad) as client:
+        loc = client.definition(_FAKE, 0, 0)
+    assert loc  # the run proceeds normally
+    assert not bad.exists()
 
 
 def test_lsp_empty_server_rejected(tmp_path: Path) -> None:

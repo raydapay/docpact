@@ -159,7 +159,10 @@ def resolve_crossfile(
     field_cache: dict[tuple[str, str], frozenset[str] | None] = {}
     func_cache: dict[str, dict[str, FunctionInfo]] = {}
 
-    client = LSPClient(config.lsp.server, root.resolve(), timeout=config.lsp.timeout)
+    log_file = Path(config.lsp.log) if config.lsp.log else None
+    client = LSPClient(
+        config.lsp.server, root.resolve(), timeout=config.lsp.timeout, log_file=log_file
+    )
     with client:
         for query_file in sorted({f.resolve() for f, _ in pending}):
             client.did_open(query_file)
