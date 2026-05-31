@@ -1,6 +1,12 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a10] — 2026-05-31
+
+### Fixed
+- **sem:** Harden SEM001 prompt against substantive-Returns false positives (#11)
+
+
 ## [0.1.0a9] — 2026-05-31
 
 ### Added

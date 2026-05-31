@@ -297,7 +297,7 @@ When you hit a violation and want to suppress it, the error output shows the syn
 ```yaml
 repos:
   - repo: https://github.com/raydapay/docpact
-    rev: v0.1.0a9
+    rev: v0.1.0a10
     hooks:
       - id: docpact
 ```
