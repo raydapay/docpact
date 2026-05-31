@@ -1,6 +1,17 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a9] — 2026-05-31
+
+### Added
+- **bench:** Add --crossfile to measure the cross-file pre-pass cost
+- **bench:** Break down cross-file pre-pass into startup vs query time
+
+
+### Fixed
+- **crossfile:** Resolve file:// URIs correctly on Windows
+
+
 ## [0.1.0a8] — 2026-05-31
 
 ### Added
