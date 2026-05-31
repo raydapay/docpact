@@ -117,9 +117,12 @@ It runs only when both `REG` is in `select` and `--crossfile` is passed; a
 missing or failing server degrades gracefully (a clear note, the run continues).
 Per-symbol LSP queries plus workspace indexing make it heavier than the per-file
 pass — fitting for an opt-in CI step, not every keystroke. Measure the added cost
-on your own tree with `docpact bench --crossfile`. The LSP resolution is serial
-(one session), but the per-file analysis still parallelizes (`--jobs`).
-Deterministic with a pinned server. See [ADR-009](docs/adr/ADR-009-cross-file-via-lsp.md).
+on your own tree with `docpact bench --crossfile`: it breaks the pre-pass into
+server spawn+init vs. query time (and flags the slowest query, usually the
+server's first workspace index), so you can see what dominates on *your* code.
+The LSP resolution is serial (one session); the per-file analysis still
+parallelizes (`--jobs`). Deterministic with a pinned server.
+See [ADR-009](docs/adr/ADR-009-cross-file-via-lsp.md).
 
 ## What it checks
 
@@ -273,7 +276,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 1006 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 1007 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 

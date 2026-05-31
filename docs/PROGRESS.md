@@ -140,6 +140,18 @@ resolution also feeds the semantic layer (ADR-010 "one resolution, two consumers
   model-instance and `**kwargs` handler shapes to stay low-false-positive. Runs in
   the same `--crossfile` pre-pass; resolver resolves per-rule severities from config.
 
+**Performance — measure, don't guess (ADR-009 RT-2).** The cross-file pre-pass is
+serial (one LSP session); the per-file analysis still parallelizes under `--jobs`.
+`docpact bench --crossfile` reports the pre-pass cost broken into server spawn+init
+vs. query time (+ slowest query, which usually carries the server's first workspace
+index), so an adopter can see on *their own tree* what dominates. Two optimizations
+are **data-gated on that breakdown, not yet built**: (1) a persistent/warm server to
+amortize spawn+index across runs (wins when startup/index dominates); (2) concurrent
+(pipelined) `definition` requests within the *one* session (wins when query
+round-trips dominate). Spinning one LSP session *per worker* was considered and
+rejected: each session re-indexes the whole workspace, so it N×'s the dominant cost
+(indexing) and the memory — the opposite of help on a heavy codebase.
+
 **Validated against real `ty server` (0.0.37), 2026-05-31** — not just the offline
 fake. `docpact check --crossfile` with `server = ["ty", "server"]` resolved and
 fired correctly on: a direct cross-module import (REG010 + REG011), a re-export

@@ -18,7 +18,7 @@ report as graceful degradation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
@@ -45,6 +45,24 @@ _DESCRIPTION_BUDGET = 500  # max chars of the registry description carried into 
 
 
 @dataclass(frozen=True, slots=True)
+class CrossfileTiming:
+    """Wall-clock breakdown of one cross-file resolution pass.
+
+    Lets `docpact bench --crossfile` show users where their cross-file time
+    goes — server spawn+initialize vs. per-query resolution — so they can decide
+    on their own tree whether a warm/persistent server or concurrent queries
+    would help. All zero when there were no entries to resolve.
+
+    Stability: beta
+    """
+
+    startup_seconds: float = 0.0  # spawn + initialize (carries workspace indexing)
+    query_seconds: float = 0.0  # summed wall-clock across all definition() calls
+    query_count: int = 0  # number of definition() calls
+    max_query_seconds: float = 0.0  # slowest single query (often the first, lazy-index)
+
+
+@dataclass(frozen=True, slots=True)
 class CrossfileResult:
     """The products of one cross-file resolution pass (ADR-010).
 
@@ -54,6 +72,7 @@ class CrossfileResult:
     findings: list[RuleResult]  # REG010 + REG011 cross-file findings
     floor: frozenset[tuple[str, str]]  # (resolved-file resolved-posix, function-name) → Tier 3
     context: dict[tuple[str, str], str]  # same key → semantic-prompt context note
+    timing: CrossfileTiming = field(default_factory=CrossfileTiming)  # bench diagnostics
 
 
 def _uri_to_path(uri: str) -> Path | None:
@@ -134,7 +153,8 @@ def resolve_crossfile(
     field_cache: dict[tuple[str, str], frozenset[str] | None] = {}
     func_cache: dict[str, dict[str, FunctionInfo]] = {}
 
-    with LSPClient(config.lsp.server, root.resolve(), timeout=config.lsp.timeout) as client:
+    client = LSPClient(config.lsp.server, root.resolve(), timeout=config.lsp.timeout)
+    with client:
         for query_file in sorted({f.resolve() for f, _ in pending}):
             client.did_open(query_file)
         for file_path, entry in pending:
@@ -168,7 +188,15 @@ def resolve_crossfile(
                             )
 
     findings.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
-    return CrossfileResult(findings=findings, floor=frozenset(floor), context=context)
+    timing = CrossfileTiming(
+        startup_seconds=client.startup_seconds,
+        query_seconds=client.query_seconds,
+        query_count=client.query_count,
+        max_query_seconds=client.max_query_seconds,
+    )
+    return CrossfileResult(
+        findings=findings, floor=frozenset(floor), context=context, timing=timing
+    )
 
 
 def _severity(config: Config, rules: dict[str, tuple[RuleMetadata, RuleFn]], code: str) -> Severity:

@@ -38,7 +38,7 @@ from docpact.config import (
     rule_is_enabled,
     rule_is_file_ignored,
 )
-from docpact.crossfile import CrossfileResult, resolve_crossfile
+from docpact.crossfile import CrossfileResult, CrossfileTiming, resolve_crossfile
 from docpact.fix import apply_fixes, diff_fixes
 from docpact.lsp import LSPError
 from docpact.model.diagnostic import Severity
@@ -1108,11 +1108,15 @@ def _bench_times(files: list[Path], config: Config, root: Path, runs: int) -> li
 
 def _bench_crossfile(
     files: list[Path], config: Config, root: Path, runs: int
-) -> tuple[list[float], int, str | None]:
+) -> tuple[list[float], list[CrossfileTiming], int, str | None]:
     """Time the cross-file resolution pre-pass over `runs` iterations.
 
     The pre-pass (one LSP session resolving every imported model/handler) is the
     only cost `--crossfile` adds over a normal check; it is serial by nature.
+    Each iteration's startup-vs-query breakdown is captured so `bench` can show
+    the user where the time goes (and whether a warm server or concurrent
+    queries would help) — the same measure-then-decide affordance `bench` gives
+    for `--jobs`.
 
     Args:
         files: Files to resolve cross-file references across.
@@ -1121,26 +1125,68 @@ def _bench_crossfile(
         runs: Timed iterations.
 
     Returns:
-        ``(times, resolved, error)`` — per-run wall-clock seconds, the count of
-        resolved references (floor + findings, an activity indicator), and an
-        error string when the server is unavailable (else None). An empty
-        ``times`` with no error means there were no cross-file entries to resolve.
+        ``(times, timings, resolved, error)`` — per-run wall-clock seconds,
+        per-run timing breakdowns, the count of resolved references (floor +
+        findings, an activity indicator), and an error string when the server is
+        unavailable (else None). An empty ``times`` with no error means there
+        were no cross-file entries to resolve.
     """
     import time
 
     try:
         warm = resolve_crossfile(files, config, root)  # warm-up: server spawn + index
     except LSPError as exc:
-        return [], 0, str(exc)
+        return [], [], 0, str(exc)
     resolved = len(warm.floor) + len(warm.findings)
     if resolved == 0 and not warm.context:
-        return [], 0, None  # nothing to resolve in this tree
+        return [], [], 0, None  # nothing to resolve in this tree
     times: list[float] = []
+    timings: list[CrossfileTiming] = []
     for _ in range(runs):
         start = time.perf_counter()
-        resolve_crossfile(files, config, root)
+        result = resolve_crossfile(files, config, root)
         times.append(time.perf_counter() - start)
-    return times, resolved, None
+        timings.append(result.timing)
+    return times, timings, resolved, None
+
+
+def _report_crossfile(times: list[float], timings: list[CrossfileTiming], resolved: int) -> None:
+    """Print the cross-file pre-pass timing breakdown and a tuning hint."""
+    import statistics
+
+    total = statistics.median(times) * 1000
+    startup = statistics.median([t.startup_seconds for t in timings]) * 1000
+    query = statistics.median([t.query_seconds for t in timings]) * 1000
+    slowest = statistics.median([t.max_query_seconds for t in timings]) * 1000
+    count = timings[0].query_count
+
+    click.echo(
+        f"  cross-file pre-pass:    {total:8.1f} ms   "
+        f"(serial, one LSP session; resolved {resolved} ref(s))"
+    )
+    click.echo(f"    server spawn + init:  {startup:8.1f} ms")
+    click.echo(f"    queries ({count}):      {query:8.1f} ms total, slowest {slowest:.1f} ms")
+
+    bulk = query - slowest  # cost of all queries except the slowest
+    if slowest >= startup and slowest >= bulk:
+        hint = (
+            "the slowest single query dominates — that is the server's initial workspace "
+            "index; a persistent/warm server would amortize it across runs (ADR-009 RT-2)."
+        )
+    elif bulk >= startup:
+        hint = (
+            "query round-trips dominate — resolving them concurrently in one session would "
+            "cut this (ADR-009 RT-2)."
+        )
+    else:
+        hint = (
+            "server spawn/init dominates — a persistent/warm server would amortize it across runs."
+        )
+    click.echo(f"  hint: {hint}")
+    click.echo(
+        "  (per-file analysis still parallelizes under --jobs; only this pre-pass is serial.)"
+    )
+    click.echo("")
 
 
 def _fmt_mb(value: float | None) -> str:
@@ -1226,23 +1272,15 @@ def bench(  # nodo: DOC012 -- click params; Args section would duplicate --help 
     click.echo("")
 
     if crossfile:
-        cf_times, resolved, cf_err = _bench_crossfile(files, serial_cfg, root, runs)
+        cf_times, cf_timings, resolved, cf_err = _bench_crossfile(files, serial_cfg, root, runs)
         if cf_err is not None:
             click.echo(f"  cross-file pre-pass:    skipped — {cf_err}")
+            click.echo("")
         elif not cf_times:
             click.echo("  cross-file pre-pass:       0.0 ms   (no cross-file entries to resolve)")
+            click.echo("")
         else:
-            cf_med = statistics.median(cf_times) * 1000
-            click.echo(
-                f"  cross-file pre-pass:    {cf_med:8.1f} ms   (serial, one LSP session; "
-                f"resolved {resolved} ref(s))"
-            )
-            click.echo(
-                "  note: --crossfile adds this once per run on top of the per-file pass; the "
-                "LSP\n        resolution is serial (single session), but per-file analysis "
-                "still parallelizes."
-            )
-        click.echo("")
+            _report_crossfile(cf_times, cf_timings, resolved)
 
     # Recommend on time (reliably measured); memory is a caveat, not the driver.
     if speedup >= 1.15:

@@ -193,6 +193,11 @@ class LSPClient:
     and awaited synchronously, while a background daemon thread drains the
     server's stdout. It is not safe to share one client across threads.
 
+    After use, the ``startup_seconds`` / ``query_seconds`` / ``query_count`` /
+    ``max_query_seconds`` attributes carry a timing breakdown (spawn+initialize
+    vs. per-``definition`` wall-clock) for diagnostics such as
+    ``docpact bench --crossfile``.
+
     Stability: beta
     """
 
@@ -220,6 +225,13 @@ class LSPClient:
         self._proc: subprocess.Popen[bytes] | None = None
         self._queue: queue.Queue[dict[str, object] | None] = queue.Queue()
         self._next_id = 0
+        # Always-on, near-zero-cost timing (for `bench --crossfile` diagnostics):
+        # startup is spawn+initialize; query timing is wall-clock per definition()
+        # call, so it includes any readiness wait (which carries a lazy first-index).
+        self.startup_seconds = 0.0
+        self.query_seconds = 0.0
+        self.query_count = 0
+        self.max_query_seconds = 0.0
 
     def __enter__(self) -> LSPClient:
         """Spawn the server and perform the initialize handshake.
@@ -232,8 +244,10 @@ class LSPClient:
 
         Stability: beta
         """
+        start = time.monotonic()
         self._spawn()
         self._initialize()
+        self.startup_seconds = time.monotonic() - start
         return self
 
     def __exit__(
@@ -405,14 +419,21 @@ class LSPClient:
             "textDocument": {"uri": file.as_uri()},
             "position": {"line": line, "character": char},
         }
-        deadline = time.monotonic() + self._timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            result = self._request("textDocument/definition", params, max(0.05, remaining))
-            locations = _normalize_locations(result)
-            if locations or time.monotonic() >= deadline:
-                return locations
-            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+        start = time.monotonic()
+        try:
+            deadline = start + self._timeout
+            while True:
+                remaining = deadline - time.monotonic()
+                result = self._request("textDocument/definition", params, max(0.05, remaining))
+                locations = _normalize_locations(result)
+                if locations or time.monotonic() >= deadline:
+                    return locations
+                time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+        finally:
+            elapsed = time.monotonic() - start
+            self.query_seconds += elapsed
+            self.query_count += 1
+            self.max_query_seconds = max(self.max_query_seconds, elapsed)
 
     def _shutdown(self) -> None:
         """Send shutdown/exit and terminate the process, swallowing teardown errors."""

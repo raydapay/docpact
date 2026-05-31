@@ -552,7 +552,21 @@ def test_cli_bench_crossfile_reports_prepass(
 
     assert with_cf.exit_code == 0
     assert "cross-file pre-pass" in with_cf.output  # measured the LSP pre-pass
+    # the startup-vs-query breakdown + tuning hint are shown so the user can decide
+    assert "server spawn + init" in with_cf.output
+    assert "queries (" in with_cf.output
+    assert "hint:" in with_cf.output
     assert "cross-file pre-pass" not in without.output  # not measured without the flag
+
+
+def test_resolve_crossfile_populates_timing(tmp_path: Path) -> None:
+    _registry, impl = _impl_workspace(tmp_path)
+    config = _config(tmp_path, "location", impl.as_uri())
+    result = resolve_crossfile([_registry, impl], config, tmp_path)
+    # one entry with an input_model + a handler → two definition() queries.
+    assert result.timing.query_count == 2
+    assert result.timing.startup_seconds >= 0.0
+    assert result.timing.query_seconds >= 0.0
 
 
 def test_cli_bench_crossfile_no_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
