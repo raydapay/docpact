@@ -529,6 +529,12 @@ The floor is overridable three ways:
 - **Per file** — `[tool.docpact.registry] no_tier_floor = ["glob", ...]`. Matching files are still detected and `REG` rules still run, but no tier floor is applied. Globs are anchored to the project root, the same convention as `per-file-tier`.
 - **Per project** — `[tool.docpact.registry] assign_tier = false` (default `true`). Disables the floor everywhere while leaving registry detection and `REG` rules active.
 
+##### Cross-file extension under `--crossfile` (ADR-010)
+
+The floor above is file-local: it fires only when the registry entry and the function it names are in the same file. Under `docpact check --crossfile` (opt-in), the floor is **extended across files**: a function registered as an imported `handler` in *another* module is resolved to its defining file via the LSP server and held to the same `max(3, t)` floor there. This is the FR-2(b) capability of ADR-009/ADR-010.
+
+This is a **bounded, opt-in amendment to ADR-003's determinism guarantee**: with `--crossfile`, a function's tier may depend on another file (and on the pinned LSP server's resolution), so tier assignment is *project-level* deterministic rather than *file-level*. `docpact check one_file.py` and `docpact check src/ --crossfile` may legitimately assign the same imported handler different tiers. The default `check` (no `--crossfile`) is unchanged — file-local, offline, and dependent on nothing outside the file. A handler the server cannot resolve simply does not receive the cross-file floor (under-enforce, never invent a demand).
+
 ### 10.2 Tier 1 — Internal functions
 
 **Required:** Summary only.
@@ -658,6 +664,15 @@ local servers, with other providers added as adapter classes). **Designed, not y
 built:** `--sample-rate`, `--changed-only`, module-level scans, and `finding_threshold`
 (spec §15.1). The DOC051/REG050 *intent* (constraint surfacing) is delivered here as
 SEM001; those deterministic codes stay reserved.
+
+**`--crossfile` (ADR-010):** when passed, `semantic` reuses the same cross-file
+resolution as `check --crossfile` for two effects — *scope*, so an imported tool
+handler promoted to the Tier-3 floor (§10.1) enters `--min-tier` scope it would
+otherwise miss; and *context*, so the resolved `input_model` fields and the
+registry description are appended to that function's prompt, letting the model
+judge the full cross-file contract rather than the local fragment. Degrades
+gracefully when no LSP server is available (the run proceeds without the floor or
+the added context).
 
 #### Two scan modes
 

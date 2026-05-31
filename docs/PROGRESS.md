@@ -118,14 +118,27 @@ entries.
   spec status + new rule in §15.3; `make docs` for the new rule doc.
 - **Exit:** docs current; `list-rules` shows the new code; `make verify` green.
 
-### Step 5 — FR-2(b) handler correlation + cross-file Tier-3 floor (follow-on; flagged hard)
-- The Tier-3 floor for an *imported* handler is reverse-direction (it needs registry
-  knowledge while checking the handler's *own* file) — genuinely harder than FR-1.
-  Scope after FR-1 ships and proves out. Don't bundle it into Steps 1–4.
+### Step 5 — FR-2(b) handler correlation + cross-file Tier-3 floor (ADR-010)
+
+Scoped and accepted as ADR-010. The Tier-3 floor for an *imported* handler is
+reverse-direction (the registration fact lives in another module), so `--crossfile`
+runs a **pre-pass** that resolves all handler/model references in one LSP session
+and produces the floor *before* per-file tier assignment. The floor raises the tier
+and the existing rule engine enforces Tier 3 (bounded amendment to ADR-003:
+project-level- not file-level-deterministic, under `--crossfile` only). Same
+resolution also feeds the semantic layer (ADR-010 "one resolution, two consumers").
+
+- **Increment 1 — SHIPPED:** handler-ref + `description_text` extraction
+  (`handler_field` config); `--crossfile` pre-pass + imported-handler Tier-3 floor;
+  `semantic --crossfile` (floor → scope, resolved model fields + registry
+  description → prompt context).
+- **Increment 2 — pending:** REG011 (imported-handler *signature* ↔ schema/model
+  parity), the cross-file analogue of REG001.
 
 **Sequencing:** each step is independently shippable and non-breaking — Step 1 ships
-unused, Step 2 is backward-compatible, Step 3 is the opt-in rule, Step 4 is docs.
-Delete `scripts/spike_lsp.py` (and `spike_semantic.py`) once the respective feature lands.
+unused, Step 2 is backward-compatible, Step 3 is the opt-in rule, Step 4 is docs,
+Step 5 increment 1 is the floor + semantic composition.
+`scripts/spike_lsp.py` was deleted when Step 3 landed.
 
 ---
 

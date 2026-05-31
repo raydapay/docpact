@@ -299,6 +299,41 @@ def test_description_arg_keys_none_for_computed_description() -> None:
     assert _extract(src, description_parser=GoogleParser())[0].description_arg_keys is None
 
 
+def test_handler_ref_captured_for_name() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", handler=search_cases)]'
+    ref = _extract(src)[0].handler_ref
+    assert ref is not None
+    assert ref.name == "search_cases"
+    assert ref.line == 1
+
+
+def test_handler_ref_absent_when_field_missing() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", parameters={"properties": {}})]'
+    assert _extract(src)[0].handler_ref is None
+
+
+def test_handler_ref_none_for_dynamic_expression() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", handler=mod.search_cases)]'
+    assert _extract(src)[0].handler_ref is None
+
+
+def test_handler_field_is_configurable() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", fn=search_cases)]'
+    assert _extract(src)[0].handler_ref is None  # default "handler" does not match
+    ref = _extract(src, handler_field="fn")[0].handler_ref
+    assert ref is not None and ref.name == "search_cases"
+
+
+def test_description_text_captured_for_literal() -> None:
+    src = 'TOOLS = [ToolDefinition(name="f", description="A literal desc.")]'
+    assert _extract(src)[0].description_text == "A literal desc."
+
+
+def test_description_text_none_for_computed() -> None:
+    src = "TOOLS = [ToolDefinition(name='f', description=DESC)]"
+    assert _extract(src)[0].description_text is None
+
+
 def test_description_arg_keys_in_dict_entry() -> None:
     src = (
         "TOOLS = [{"

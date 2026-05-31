@@ -10,18 +10,25 @@ the ``check --crossfile`` CLI path are tested end-to-end through the fake.
 from __future__ import annotations
 
 import dataclasses
+import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from click.testing import CliRunner
 
+if TYPE_CHECKING:
+    import pytest
+
 from docpact.cli import main
 from docpact.config import Config, LspConfig
-from docpact.crossfile.resolver import _uri_to_path, check_input_model_parity
+from docpact.crossfile.resolver import _uri_to_path, check_input_model_parity, resolve_crossfile
 from docpact.model.diagnostic import Severity
+from docpact.model.function_info import FunctionInfo, ParameterInfo
 from docpact.model.tool_registry import ModelRef, ToolRegistryEntry
 from docpact.parser.pydantic_model import model_field_names
 from docpact.rules.reg.reg010_input_model_parity import parity_findings
+from docpact.semantic.analyzer import render_function
 
 _FAKE = Path(__file__).parent / "fixtures" / "fake_lsp_server.py"
 
@@ -263,3 +270,166 @@ def test_cli_crossfile_missing_server_degrades(tmp_path: Path) -> None:
     )
     assert "cross-file analysis skipped" in result.output
     assert result.exit_code == 0
+
+
+# --- 5b: imported-handler Tier-3 floor (ADR-010) ------------------------------
+
+# A handler in its own (public) file. Its docstring is complete for the Tier 2 a
+# public module gets by default — Args + Returns — so without the floor it is
+# clean; under the cross-file Tier-3 floor it must additionally carry Raises /
+# Constraints / Stability / MCP, which it lacks.
+_HANDLER_ONLY = (
+    '"""Handlers."""\n\n\n'
+    "def search_cases(query: str) -> list:\n"
+    '    """Search cases.\n\n'
+    "    Args:\n"
+    "        query: The search query.\n\n"
+    "    Returns:\n"
+    "        The matching cases.\n"
+    '    """\n'
+    "    return []\n"
+)
+
+
+def _handler_workspace(tmp_path: Path) -> tuple[Path, Path]:
+    """Write handlers.py + a registry.py registering its handler; return both paths."""
+    handlers = tmp_path / "handlers.py"
+    handlers.write_text(_HANDLER_ONLY)
+    registry = tmp_path / "registry.py"
+    registry.write_text(
+        '"""Registry."""\n'
+        "from handlers import search_cases\n\n\n"
+        "class ToolDefinition:\n"
+        "    def __init__(self, **kw):\n        pass\n\n\n"
+        'TOOLS = [ToolDefinition(name="search", handler=search_cases)]\n'
+    )
+    return registry, handlers
+
+
+def test_resolve_crossfile_floor_from_handler(tmp_path: Path) -> None:
+    registry, handlers = _handler_workspace(tmp_path)
+    config = _config(tmp_path, "location", handlers.as_uri())
+    result = resolve_crossfile([registry], config, tmp_path, Severity.WARNING)
+    assert (handlers.resolve().as_posix(), "search_cases") in result.floor
+
+
+def _write_reg_doc_config(tmp_path: Path, target_uri: str) -> Path:
+    """pyproject selecting DOC+REG and wiring the fake server to target_uri."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        "[tool.docpact]\n"
+        'select = ["DOC", "REG"]\n\n'
+        "[tool.docpact.lsp]\n"
+        f"server = ['{sys.executable}', '{_FAKE}', 'location', '{target_uri}']\n"
+    )
+    return pyproject
+
+
+def test_cli_crossfile_floors_imported_handler(tmp_path: Path) -> None:
+    registry, handlers = _handler_workspace(tmp_path)
+    pyproject = _write_reg_doc_config(tmp_path, handlers.as_uri())
+    args = ["check", str(handlers), str(registry), "--config", str(pyproject), "--format", "json"]
+
+    without = CliRunner().invoke(main, args)
+    with_cf = CliRunner().invoke(main, [*args, "--crossfile"])
+
+    def _handler_findings(output: str) -> list[dict]:
+        diags = json.loads(output)["diagnostics"]
+        return [d for d in diags if d["location"]["file"].endswith("handlers.py")]
+
+    # Without --crossfile, search_cases is Tier 2 and its Args/Returns suffice → clean.
+    assert _handler_findings(without.output) == []
+    # With --crossfile, it is floored to Tier 3 → the extra section requirements fire.
+    assert _handler_findings(with_cf.output)
+
+
+# --- 5d: cross-file x semantic (ADR-010) --------------------------------------
+
+# Model and handler co-located so the single fake target URI resolves both.
+_IMPL = (
+    '"""Impl."""\n'
+    "from pydantic import BaseModel\n\n\n"
+    "class SearchInput(BaseModel):\n"
+    "    query: str\n"
+    "    limit: int\n\n\n"
+    "def search_cases(query: str) -> list:\n"
+    '    """Search cases."""\n'
+    "    return []\n"
+)
+
+
+def _impl_workspace(tmp_path: Path) -> tuple[Path, Path]:
+    """Write impl.py (model + handler) and a registry referencing both."""
+    impl = tmp_path / "impl.py"
+    impl.write_text(_IMPL)
+    registry = tmp_path / "registry.py"
+    registry.write_text(
+        '"""Registry."""\n'
+        "from impl import SearchInput, search_cases\n\n\n"
+        "class ToolDefinition:\n"
+        "    def __init__(self, **kw):\n        pass\n\n\n"
+        "TOOLS = [\n"
+        "    ToolDefinition(\n"
+        '        name="search",\n'
+        "        handler=search_cases,\n"
+        "        input_model=SearchInput,\n"
+        '        description="Search cases.",\n'
+        "    ),\n"
+        "]\n"
+    )
+    return registry, impl
+
+
+def test_resolve_crossfile_context_carries_model_fields(tmp_path: Path) -> None:
+    registry, impl = _impl_workspace(tmp_path)
+    config = _config(tmp_path, "location", impl.as_uri())
+    result = resolve_crossfile([registry, impl], config, tmp_path, Severity.WARNING)
+    note = result.context[(impl.resolve().as_posix(), "search_cases")]
+    assert "search" in note  # tool name
+    assert "query" in note and "limit" in note  # imported model fields
+    assert "Search cases." in note  # registry description
+
+
+def test_render_function_appends_context() -> None:
+    fn = FunctionInfo(
+        name="f",
+        file_path=Path("m.py"),
+        line=1,
+        column=0,
+        parameters=(ParameterInfo(name="x", annotation="int", default=None, kind="positional"),),
+        return_annotation="str",
+        decorators=(),
+        docstring_raw="Summary.",
+        docstring_line=1,
+        containing_class=None,
+        def_start_offset=0,
+        def_end_offset=0,
+        docstring_start_offset=None,
+        docstring_end_offset=None,
+    )
+    assert "[cross-file contract] note here" in render_function(fn, "note here")
+    assert "[cross-file contract]" not in render_function(fn, None)
+
+
+def test_cli_semantic_crossfile_dry_run_scopes_and_enriches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _registry, impl = _impl_workspace(tmp_path)
+    # docpact.toml so config is discovered from cwd (semantic has no --config flag).
+    (tmp_path / "docpact.toml").write_text(
+        f"[lsp]\nserver = ['{sys.executable}', '{_FAKE}', 'location', '{impl.as_uri()}']\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    # Pass the directory so the registry (registry.py) is in the resolver's scope.
+    base = ["semantic", ".", "--dry-run", "--min-tier", "3"]
+
+    without_cf = runner.invoke(main, base)
+    with_cf = runner.invoke(main, [*base, "--crossfile"])
+
+    # search_cases is Tier 2 in its own file: out of scope at --min-tier 3 without
+    # --crossfile, floored to Tier 3 (so in scope) with it, and its prompt is enriched.
+    assert "search_cases" not in without_cf.output
+    assert "search_cases" in with_cf.output
+    assert "[cross-file contract]" in with_cf.output
+    assert "limit" in with_cf.output  # imported model fields injected

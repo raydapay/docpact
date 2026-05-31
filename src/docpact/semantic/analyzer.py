@@ -70,23 +70,52 @@ def _signature(func: FunctionInfo) -> str:
     return f"def {func.name}({', '.join(parts)}){ret}:"
 
 
-def render_function(func: FunctionInfo) -> str:
+CrossfileContext = dict[tuple[str, str], str]
+"""Map of (resolved-file-posix, function-name) → a cross-file contract note."""
+
+
+def _context_for(func: FunctionInfo, context: CrossfileContext | None) -> str | None:
+    """Return the cross-file context note for a function, or None.
+
+    Args:
+        func: The function being rendered.
+        context: The cross-file context map, or None when not in --crossfile mode.
+
+    Returns:
+        The note string keyed by the function's resolved path and name, or None.
+    """
+    if not context:
+        return None
+    return context.get((func.file_path.resolve().as_posix(), func.name))
+
+
+def render_function(func: FunctionInfo, context_text: str | None = None) -> str:
     """Render one function as signature + docstring text for the prompt.
 
     Args:
         func: The function to render.
+        context_text: Optional cross-file contract note (ADR-010) appended so
+            the model can judge whether the docstring documents the imported
+            contract, not just the local signature.
 
     Returns:
-        A compact ``def ...:`` line followed by the triple-quoted docstring.
+        A compact ``def ...:`` line followed by the triple-quoted docstring, and
+        the cross-file note when provided.
 
     Stability: beta
     """
     doc = (func.docstring_raw or "").strip()
-    return f'{_signature(func)}\n    """{doc}"""'
+    rendered = f'{_signature(func)}\n    """{doc}"""'
+    if context_text:
+        rendered += f"\n\n[cross-file contract] {context_text}"
+    return rendered
 
 
 def build_batches(
-    functions: list[FunctionInfo], *, batch_chars: int = 24000
+    functions: list[FunctionInfo],
+    *,
+    batch_chars: int = 24000,
+    context: CrossfileContext | None = None,
 ) -> list[list[FunctionInfo]]:
     """Group functions into batches under a per-request character budget.
 
@@ -94,6 +123,8 @@ def build_batches(
         functions: Functions to review, in source order.
         batch_chars: Approximate per-request character budget (~6k tokens at
             8k-token endpoints, leaving headroom for system prompt and output).
+        context: Optional cross-file context map; its notes count toward the
+            per-batch size so enriched prompts still fit the budget.
 
     Returns:
         A list of batches, each a list of FunctionInfo whose rendered size fits
@@ -105,7 +136,7 @@ def build_batches(
     cur: list[FunctionInfo] = []
     size = 0
     for fn in functions:
-        rendered = len(render_function(fn))
+        rendered = len(render_function(fn, _context_for(fn, context)))
         if cur and size + rendered > batch_chars:
             batches.append(cur)
             cur, size = [], 0
@@ -116,18 +147,19 @@ def build_batches(
     return batches
 
 
-def user_prompt(batch: list[FunctionInfo]) -> str:
+def user_prompt(batch: list[FunctionInfo], context: CrossfileContext | None = None) -> str:
     """Build the user message enumerating a batch of functions to review.
 
     Args:
         batch: The functions in this request.
+        context: Optional cross-file context map (ADR-010) for prompt enrichment.
 
     Returns:
         A single user-message string.
 
     Stability: beta
     """
-    body = "\n\n---\n\n".join(render_function(fn) for fn in batch)
+    body = "\n\n---\n\n".join(render_function(fn, _context_for(fn, context)) for fn in batch)
     return f"Review these {len(batch)} functions. Return JSON only.\n\n{body}"
 
 
@@ -150,6 +182,7 @@ def analyze(
     backend: LLMBackend,
     *,
     severity: Severity = Severity.WARNING,
+    context: CrossfileContext | None = None,
 ) -> SemanticReport:
     """Run semantic analysis over tier-scoped functions and return SEM001 findings.
 
@@ -157,6 +190,10 @@ def analyze(
         functions: Functions to review (the caller scopes these by tier).
         backend: The LLM backend to call.
         severity: Severity to attach to emitted SEM001 results.
+        context: Optional cross-file context map (ADR-010); when provided, a
+            function's resolved input-model fields and registry description are
+            appended to its prompt so the model judges the full cross-file
+            contract.
 
     Returns:
         A SemanticReport with one SEM001 RuleResult per weak/empty verdict
@@ -178,9 +215,9 @@ def analyze(
         by_name.setdefault(fn.name, fn)
 
     results: list[RuleResult] = []
-    batches = build_batches(functions)
+    batches = build_batches(functions, context=context)
     for batch in batches:
-        reply = backend.complete(SYSTEM, user_prompt(batch))
+        reply = backend.complete(SYSTEM, user_prompt(batch, context))
         try:
             parsed = _extract_json(reply)
         except json.JSONDecodeError:

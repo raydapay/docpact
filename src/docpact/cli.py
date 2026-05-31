@@ -38,7 +38,7 @@ from docpact.config import (
     rule_is_enabled,
     rule_is_file_ignored,
 )
-from docpact.crossfile import check_input_model_parity
+from docpact.crossfile import CrossfileResult, resolve_crossfile
 from docpact.fix import apply_fixes, diff_fixes
 from docpact.lsp import LSPError
 from docpact.model.diagnostic import Severity
@@ -354,17 +354,22 @@ def _check_one_file(
     file_path: Path,
     config: Config,
     root: Path,
+    crossfile_floor: frozenset[tuple[str, str]] = frozenset(),
 ) -> tuple[list[RuleResult], dict[int, frozenset[str]]]:
     """Run all enabled rules over a single file.
 
     Self-contained so it can run unchanged in the main process or in a worker
     process: it derives the rule registry and parser itself rather than taking
-    them as arguments, and all of its inputs (Path, Config, Path) are picklable.
+    them as arguments, and all of its inputs are picklable.
 
     Args:
         file_path: The .py file to analyze.
         config: Resolved configuration.
         root: Project root, for anchoring per-file glob patterns.
+        crossfile_floor: ``(resolved-file, function-name)`` pairs that an
+            imported handler is registered under (ADR-010). Names matching this
+            file augment the same-file Tier-3 floor, so a function registered
+            as a tool in another module is held to the agent-facing bar here.
 
     Returns:
         A pair of (diagnostics for this file, suppression map for this file).
@@ -413,9 +418,18 @@ def _check_one_file(
             description_field=config.registry.description_field,
             parameters_field=config.registry.parameters_field,
             input_model_field=config.registry.input_model_field,
+            handler_field=config.registry.handler_field,
             description_parser=parser,
         )
         floor_names = _registry_floor_names(registry_entries, file_path, config, root)
+
+    # Cross-file Tier-3 floor (ADR-010): handlers registered in another module
+    # and resolved to this file are held to the agent-facing bar here too.
+    crossfile_names = frozenset(
+        name for (f, name) in crossfile_floor if f == file_path.resolve().as_posix()
+    )
+    if crossfile_names:
+        floor_names = (floor_names or frozenset()) | crossfile_names
 
     file_results.extend(
         _run_function_level_rules(
@@ -470,6 +484,7 @@ def _map_files(
     py_files: list[Path],
     config: Config,
     root: Path,
+    crossfile_floor: frozenset[tuple[str, str]] = frozenset(),
 ) -> list[tuple[list[RuleResult], dict[int, frozenset[str]]]]:
     """Analyze every file, serially or across worker processes per config.jobs.
 
@@ -478,12 +493,14 @@ def _map_files(
     """
     workers = _resolve_jobs(config.jobs)
     if workers == 1 or len(py_files) <= 1:
-        return [_check_one_file(f, config, root) for f in py_files]
+        return [_check_one_file(f, config, root, crossfile_floor) for f in py_files]
 
     # ProcessPoolExecutor: CPU-bound parsing needs real parallelism, which the
     # GIL denies to threads. map() preserves input order; results are sorted
     # again below, so completion order never affects output (determinism holds).
-    worker = functools.partial(_check_one_file, config=config, root=root)
+    worker = functools.partial(
+        _check_one_file, config=config, root=root, crossfile_floor=crossfile_floor
+    )
     with ProcessPoolExecutor(max_workers=workers) as executor:
         return list(executor.map(worker, py_files))
 
@@ -492,13 +509,14 @@ def _run_checks(
     py_files: list[Path],
     config: Config,
     root: Path,
+    crossfile_floor: frozenset[tuple[str, str]] = frozenset(),
 ) -> tuple[list[RuleResult], dict[Path, dict[int, frozenset[str]]]]:
     """Run all enabled rules over the given files and return results with suppression maps."""
     results: list[RuleResult] = []
     suppressions: dict[Path, dict[int, frozenset[str]]] = {}
 
     for file_path, (file_results, file_suppressions) in zip(
-        py_files, _map_files(py_files, config, root), strict=True
+        py_files, _map_files(py_files, config, root, crossfile_floor), strict=True
     ):
         suppressions[file_path] = file_suppressions
         results.extend(file_results)
@@ -507,17 +525,15 @@ def _run_checks(
     return results, suppressions
 
 
-def _run_crossfile_checks(
-    py_files: list[Path],
-    config: Config,
-    root: Path,
-) -> list[RuleResult]:
-    """Run the opt-in cross-file pass (REG010), degrading gracefully on failure.
+def _compute_crossfile(py_files: list[Path], config: Config, root: Path) -> CrossfileResult | None:
+    """Run the opt-in cross-file resolution pre-pass, degrading gracefully.
 
-    Returns REG010 results, or an empty list when the rule is disabled or the
-    LSP server is unavailable. A server failure is reported on stderr and the
-    run continues without cross-file findings — cross-file is advisory tooling,
-    not a reason to fail an otherwise-clean check.
+    Returns a CrossfileResult (REG010 findings + the imported-handler Tier-3
+    floor + semantic context), or None when REG010 is disabled or the LSP
+    server is unavailable. A server failure is reported on stderr and the run
+    continues without cross-file results — cross-file is opt-in tooling, not a
+    reason to fail or abort an otherwise-clean check. REG010 set to ``off``
+    suppresses its parity findings but the handler floor still applies.
     """
     rules = all_rules()
     if "REG010" not in rules or not rule_is_enabled("REG010", "REG", config.select, config.ignore):
@@ -525,20 +541,43 @@ def _run_crossfile_checks(
             "--crossfile given but REG010 is not enabled; add 'REG' to select. Skipping.",
             err=True,
         )
-        return []
+        return None
     meta, _ = rules["REG010"]
     severity = config.rule_severities.get("REG010", meta.default_severity)
-    if severity == Severity.OFF:
-        return []
     try:
-        return check_input_model_parity(py_files, config, root, severity)
+        result = resolve_crossfile(py_files, config, root, severity)
     except LSPError as exc:
         click.echo(
             f"warning: cross-file analysis skipped — {exc} "
             f"(configure [tool.docpact.lsp] server or install docpact[crossfile]).",
             err=True,
         )
-        return []
+        return None
+    if severity == Severity.OFF:
+        # Parity findings suppressed; the Tier-3 floor still applies.
+        return dataclasses.replace(result, findings=[])
+    return result
+
+
+def _compute_crossfile_for_semantic(
+    py_files: list[Path], config: Config, root: Path
+) -> CrossfileResult | None:
+    """Resolve cross-file handlers/models for `semantic --crossfile`, degrading gracefully.
+
+    Unlike check's pre-pass this is not gated on REG selection — `semantic`
+    scopes by tier, not by `select` — and its REG010 findings are unused here
+    (only the floor and context feed the semantic run). Returns None on a
+    missing/failing server, with a note, so the semantic run still proceeds.
+    """
+    try:
+        return resolve_crossfile(py_files, config, root, Severity.WARNING)
+    except LSPError as exc:
+        click.echo(
+            f"warning: cross-file resolution skipped — {exc} "
+            f"(configure [tool.docpact.lsp] server or install docpact[crossfile]).",
+            err=True,
+        )
+        return None
 
 
 @click.group()
@@ -761,7 +800,13 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
                 click.echo(f.as_posix())
         sys.exit(0)
 
-    results, suppressions = _run_checks(py_files, config, config_root)
+    # Cross-file pre-pass (ADR-009/ADR-010): opt-in via --crossfile. Runs before
+    # per-file checks because its Tier-3 floor must be known at tier-assignment
+    # time; one LSP session yields the floor and the REG010 findings together.
+    crossfile_result = _compute_crossfile(py_files, config, config_root) if crossfile else None
+    crossfile_floor = crossfile_result.floor if crossfile_result else frozenset()
+
+    results, suppressions = _run_checks(py_files, config, config_root, crossfile_floor)
 
     apply_unsafe = unsafe_fixes and do_fix
 
@@ -780,13 +825,12 @@ def check(  # nodo: DOC012 -- click params; Args section would duplicate --help 
             click.echo(f"warning: {conflict}", err=True)
         # Re-run checks on modified files so reported results reflect post-fix state.
         if modified:
-            results, suppressions = _run_checks(py_files, config, config_root)
+            results, suppressions = _run_checks(py_files, config, config_root, crossfile_floor)
 
-    # Cross-file pass (ADR-009): opt-in via --crossfile, gated on REG010 being
-    # enabled and a server being available. Runs after fixes (its findings are
-    # not fixable) and before suppression so an inline REG010 suppression applies.
-    if crossfile:
-        results.extend(_run_crossfile_checks(py_files, config, config_root))
+    # Merge REG010 findings (not fixable) before suppression, so an inline
+    # REG010 suppression still applies.
+    if crossfile_result and crossfile_result.findings:
+        results.extend(crossfile_result.findings)
         results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
 
     # Apply inline suppressions before output and exit-code evaluation.
@@ -1161,9 +1205,18 @@ def bench(  # nodo: DOC012 -- click params; Args section would duplicate --help 
 
 
 def _collect_semantic_functions(
-    py_files: list[Path], config: Config, root: Path, min_tier: int
+    py_files: list[Path],
+    config: Config,
+    root: Path,
+    min_tier: int,
+    crossfile_floor: frozenset[tuple[str, str]] = frozenset(),
 ) -> list[FunctionInfo]:
-    """Collect functions at or above min_tier across the given files, in order."""
+    """Collect functions at or above min_tier across the given files, in order.
+
+    A function registered as an imported handler elsewhere (``crossfile_floor``,
+    ADR-010) is promoted to a Tier-3 floor, so `semantic --crossfile` reviews the
+    agent-facing handlers a file-local tier would miss.
+    """
     out: list[FunctionInfo] = []
     for file_path in py_files:
         source_text = file_path.read_text(encoding="utf-8", errors="replace")
@@ -1172,10 +1225,14 @@ def _collect_semantic_functions(
             functions = extract_functions(file_path)
         except SyntaxError:
             continue
+        floored_here = file_path.resolve().as_posix()
         for fn in functions:
             if fn.docstring_raw is None:
                 continue
-            if assign_tier(fn, config.tier_overrides, all_names=all_names, root=root) >= min_tier:
+            tier = assign_tier(fn, config.tier_overrides, all_names=all_names, root=root)
+            if (floored_here, fn.name) in crossfile_floor:
+                tier = max(3, tier)
+            if tier >= min_tier:
                 out.append(fn)
     return out
 
@@ -1197,12 +1254,21 @@ def _collect_semantic_functions(
     help="Output format.",
 )
 @click.option("--exit-zero", is_flag=True, help="Exit 0 even when findings are reported.")
+@click.option(
+    "--crossfile",
+    "crossfile",
+    is_flag=True,
+    help="Resolve imported tool handlers/models via the LSP server: review the "
+    "agent-facing handlers a file-local tier misses, and enrich prompts with the "
+    "imported model's fields + registry description. Requires a [tool.docpact.lsp] server.",
+)
 def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --help text
     paths: tuple[str, ...],
     min_tier: int | None,
     dry_run: bool,
     output_format: str,
     exit_zero: bool,
+    crossfile: bool,
 ) -> None:
     """LLM-backed semantic docstring analysis (advisory, opt-in).
 
@@ -1211,24 +1277,36 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
     rules cannot. Non-deterministic and advisory; configure
     `[tool.docpact.semantic]` (backend, model, api_base, api_key_env). Use
     --dry-run to inspect prompts without an API call or sending any code.
+    --crossfile additionally resolves imported tool handlers/models (ADR-010).
     """
     cfg_result = load_config(Path.cwd())
     config, root = cfg_result.config, cfg_result.root
     scope = min_tier if min_tier is not None else config.semantic.min_tier
 
     py_files = _collect_py_files(paths, config, root)
-    functions = _collect_semantic_functions(py_files, config, root, scope)
+
+    # Cross-file resolution (ADR-010): floor promotes imported handlers into
+    # scope; context enriches each prompt with the imported contract. Optional,
+    # degrades gracefully if no server is available.
+    floor: frozenset[tuple[str, str]] = frozenset()
+    context: dict[tuple[str, str], str] = {}
+    if crossfile:
+        cf = _compute_crossfile_for_semantic(py_files, config, root)
+        if cf is not None:
+            floor, context = cf.floor, cf.context
+
+    functions = _collect_semantic_functions(py_files, config, root, scope, floor)
     if not functions:
         click.echo(f"No functions in scope (tier >= {scope}).")
         return
 
     if dry_run:
-        batches = _sem_build_batches(functions)
+        batches = _sem_build_batches(functions, context=context)
         click.echo(f"{len(functions)} functions → {len(batches)} request(s)\n")
         click.echo(f"=== SYSTEM ===\n{_SEM_SYSTEM}\n")
         for i, batch in enumerate(batches, 1):
             click.echo(f"=== REQUEST {i}/{len(batches)} ({len(batch)} functions) ===")
-            click.echo(_sem_user_prompt(batch))
+            click.echo(_sem_user_prompt(batch, context))
             click.echo("")
         click.echo("Dry run — no API call, no code sent.")
         return
@@ -1236,7 +1314,7 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
     severity = config.rule_severities.get("SEM001", Severity.WARNING)
     try:
         backend = make_backend(config.semantic)
-        report = _sem_analyze(functions, backend, severity=severity)
+        report = _sem_analyze(functions, backend, severity=severity, context=context)
     except SemanticError as exc:
         raise click.UsageError(str(exc)) from exc
 

@@ -49,6 +49,7 @@ class _Fields:
     description: str
     parameters: str
     input_model: str
+    handler: str
     parser: DocstringParser | None
 
 
@@ -60,6 +61,7 @@ def extract_tool_registry(
     description_field: str,
     parameters_field: str,
     input_model_field: str = "input_model",
+    handler_field: str = "handler",
     description_parser: DocstringParser | None = None,
 ) -> list[ToolRegistryEntry]:
     """Extract tool-registration entries from module-level list literals.
@@ -76,6 +78,9 @@ def extract_tool_registry(
         input_model_field: Field/key holding the input-model reference. When
             its value is a bare ``Name``, the entry's ``input_model_ref`` is
             populated with that symbol and its position (ADR-009).
+        handler_field: Field/key holding the handler reference. When its value
+            is a bare ``Name``, the entry's ``handler_ref`` is populated with
+            that symbol and its position (ADR-010 FR-2(b)).
         description_parser: Parser used to read the description's ``Args:``
             keys into ``description_arg_keys``. When None, that field stays
             None and no description parsing is attempted.
@@ -102,6 +107,7 @@ def extract_tool_registry(
         description=description_field,
         parameters=parameters_field,
         input_model=input_model_field,
+        handler=handler_field,
         parser=description_parser,
     )
     entries: list[ToolRegistryEntry] = []
@@ -170,6 +176,8 @@ def _entry_from_call(
         has_description=_has_nonempty_string(description),
         input_model_ref=_model_ref(kwargs.get(fields.input_model)),
         description_arg_keys=_description_arg_keys(description, fields.parser),
+        handler_ref=_model_ref(kwargs.get(fields.handler)),
+        description_text=_string_value(description),
     )
 
 
@@ -193,6 +201,8 @@ def _entry_from_dict(
         has_description=_has_nonempty_string(description),
         input_model_ref=_model_ref(items.get(fields.input_model)),
         description_arg_keys=_description_arg_keys(description, fields.parser),
+        handler_ref=_model_ref(items.get(fields.handler)),
+        description_text=_string_value(description),
     )
 
 
