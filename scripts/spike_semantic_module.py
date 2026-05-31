@@ -47,26 +47,32 @@ import ast
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-_SYSTEM = """You audit whether a Python MODULE docstring orients a reader correctly.
+_SYSTEM = """You audit a Python MODULE docstring for two specific defects. Default
+to "good"; flag "weak" ONLY when the defect is unmistakable, and then you MUST
+quote the exact offending span. If you cannot quote a span, the verdict is "good".
 
-Judge two dimensions independently. For each, return "good" or "weak", and for
-"weak" you MUST quote the exact offending span — if you cannot quote a span, the
-verdict is "good".
+- scope: is the docstring's stated purpose CONSISTENT with the module's actual
+  public symbols? "weak" ONLY when the docstring describes a capability or domain
+  the symbols do not support (e.g. claims "HTTP client for payments" but the
+  symbols are date helpers), or names a specific function/class that does not
+  exist. A docstring that accurately describes the module's purpose is GOOD even
+  if it never mentions a single symbol by name. NEVER flag for omitting,
+  under-listing, or failing to enumerate symbols — symbol-list completeness is NOT
+  a defect. Listing every public name is NOT required and NOT desirable.
 
-- scope: does the docstring's description match what the module ACTUALLY contains
-  (the listed public symbols)? "weak" only if it claims something not present, or
-  omits the module's evident main purpose. A terse-but-accurate summary is good.
-- orientation: does it help a reader decide WHEN/WHY to use this module rather
-  than guess? "weak" only if it is contentless boilerplate (e.g. just restates the
-  filename). Do NOT flag a docstring merely for being brief, or for not comparing
-  itself to other modules.
+- orientation: is the docstring contentful, or pure boilerplate? "weak" ONLY when
+  it conveys essentially nothing beyond the module's name (e.g. "Utilities.", "The
+  widgets module.", "Helpers."). A docstring that states the module's purpose in
+  any substantive way is GOOD. Do NOT flag for brevity, for not comparing to
+  sibling modules, or for not spelling out when to use it.
 
-Be fair, not pedantic. Most real module docstrings are good. Reply ONLY with JSON:
+Most real module docstrings are GOOD on both. Reply ONLY with JSON:
 {"scope": "good|weak", "scope_evidence": "...", "orientation": "good|weak", "orientation_evidence": "..."}
 """
 
@@ -186,6 +192,7 @@ def main() -> int:
     ap.add_argument("--variant", choices=["alone", "symbols", "context", "all"], default="all")
     ap.add_argument("--context-files", nargs="*", default=["README.md", "CLAUDE.md"])
     ap.add_argument("--limit", type=int, default=20, help="cap real modules sampled (cost)")
+    ap.add_argument("--sleep", type=float, default=0.0, help="seconds between calls (rate-limit)")
     ap.add_argument("--dry-run", action="store_true", help="print prompts; no API call")
     args = ap.parse_args()
 
@@ -218,6 +225,8 @@ def main() -> int:
     tally: dict[str, dict[str, dict[str, list[int]]]] = {}
     for v in variants:
         for u, cohort in units:
+            if args.sleep:
+                time.sleep(args.sleep)
             try:
                 reply = _complete(args.api_base, args.model, key, _SYSTEM, _prompt(u, v, context), 90)
                 verdict = _parse(reply)
