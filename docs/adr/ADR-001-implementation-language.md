@@ -24,7 +24,7 @@ This ADR resolves the question: in what language should v0.1 of docpact be imple
 
 ## Decision
 
-**docpact v0.1 is implemented in Python 3.12+, using `griffe` for docstring parsing and the standard-library `ast` module for Python source parsing.**
+**docpact v0.1 is implemented in Python 3.11+, using `griffe` for docstring parsing and the standard-library `ast` module for Python source parsing.**
 
 The implementation language is not part of the specification's public contract. Users interact with docpact through its CLI, its configuration files, and its output formats. A future major version may rewrite all or part of the implementation in another language (Rust via PyO3 is the most likely candidate) without breaking the user-facing contract. Such a rewrite would be subject to its own ADR.
 

@@ -10,9 +10,10 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
-DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001.
-DOC051 (Annotated constraint dup) and DOC098 (doctest) reserved/deferred.
-REG and SEM are opt-in; SEM001 is advisory via `docpact semantic` (ADR-008).
+DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001.
+DOC051 (Annotated constraint dup) and DOC098 (doctest) reserved/deferred; REG003/REG050/DOC020 reserved.
+REG and SEM are opt-in; SEM001 is advisory via `docpact semantic` (ADR-008); REG010/REG011 are
+cross-file, run only under `docpact check --crossfile` (ADR-009/010).
 (Run `docpact list-rules` for the authoritative current set.)
 
 No active milestone.
@@ -58,12 +59,14 @@ showing docstring parsing has become material. See ADR-006 for full why/why-not.
 
 ---
 
-## Planned: cross-file analysis via LSP (`docpact[crossfile]`) — ADR-009
+## Cross-file analysis via LSP (`docpact[crossfile]`) — ADR-009 + ADR-010 — SHIPPED
 
-**Decided (ADR-009), not yet built.** Opt-in, provider-agnostic, LSP-backed cross-file
-resolution → FR-1 (Args block ↔ imported Pydantic model fields parity) and FR-2(b)
-(imported-handler correlation). Deterministic, static (server resolves without
-executing), server-swappable. The default per-file `check` stays offline and unchanged.
+**Shipped (all 5 steps; ADR-009 + ADR-010).** Opt-in, provider-agnostic, LSP-backed
+cross-file resolution → FR-1 (Args block ↔ imported Pydantic model fields parity, REG010)
+and FR-2(b) (imported-handler Tier-3 floor + signature parity, REG011) + the cross-file ×
+semantic composition. Deterministic, static (server resolves without executing),
+server-swappable. The default per-file `check` stays offline and unchanged. The step plan
+below is retained as the build record; see the per-step "SHIPPED" notes.
 
 **Reuse (don't reinvent):** `scripts/spike_lsp.py` is working LSP-client code (framing,
 JSON-RPC, handshake, `textDocument/definition`, re-export resolution — all proven) →
@@ -82,7 +85,7 @@ entries.
 - **Run `make verify` before the final commit** (it writes — stats/docs), per the
   Definition of done.
 
-### Step 1 — LSP client layer (graduate the spike)
+### Step 1 — LSP client layer (graduate the spike) — SHIPPED
 - **Build:** `src/docpact/lsp/client.py` — provider-agnostic `LSPClient` (context
   manager): spawn the configured server, `initialize`/`initialized`, `didOpen`,
   `definition(file, line, char) -> list[Location]` normalizing `Location` |
@@ -93,7 +96,7 @@ entries.
   server → `LSPError`; `make verify` green (new code dogfood-clean + covered); zero
   real-server use in CI.
 
-### Step 2 — REG extraction extension (capture model ref + description Args)
+### Step 2 — REG extraction extension (capture model ref + description Args) — SHIPPED
 - **Build:** extend tool-registry extraction to also capture, per entry, the
   `input_model` symbol *reference + source position* (for LSP) and the description
   string's `Args:` keys (via the docstring parser). Backward-compatible; literals/Name
@@ -101,7 +104,7 @@ entries.
 - **Exit:** entries carry the new fields when present; all existing REG tests pass
   unchanged; new extraction unit tests.
 
-### Step 3 — FR-1 cross-file parity rule
+### Step 3 — FR-1 cross-file parity rule — SHIPPED
 - **Build:** an opt-in cross-file pass: for an entry whose `input_model` is imported,
   `LSPClient.definition` → defining file → AST-extract the model's fields (reuse DOC050)
   → compare bidirectionally to the entry's `Args:` keys → emit findings. Deterministic.
@@ -112,7 +115,7 @@ entries.
 - **Exit:** parity fires on a two-file fixture (match / missing-in-doc / missing-in-model)
   driven by a *fake* LSP server; opt-in; `make verify` green.
 
-### Step 4 — packaging + docs
+### Step 4 — packaging + docs — SHIPPED
 - **Build:** `docpact[crossfile]` extra (optional server dep); README + ADOPTING
   cross-file section (`[tool.docpact.lsp]`, server-swappable note, opt-in/perf caveats);
   spec status + new rule in §15.3; `make docs` for the new rule doc.
@@ -250,10 +253,10 @@ Addressed 5 of 7 findings from external dry-run on a real FastAPI codebase.
   module docstrings picked up by the line scanner). Pre-existing limitation
   of `parse_suppressions` not skipping string literal content.
 
-**Deferred (inbox issues #2, #3):**
-- `--config` flag for explicit pyproject.toml path.
-- `per-file-tier` glob anchoring to project root.
-Both pair naturally; deferred to a UX pass.
+**Shipped (was inbox #2, #3):**
+- `--config` flag for explicit pyproject.toml path (`load_config_from`).
+- `per-file-tier` glob anchoring to project root (`file_tier_override_for`).
+Both shipped in a later UX pass; inbox is empty.
 
 ### DOC022 — typed prose annotation mismatch — 2026-05-19
 

@@ -1,7 +1,7 @@
 # docpact — Specification
 
 **Version:** 0.4.2  
-**Status:** Active — v0.1 complete, v0.2 complete, v0.3 complete  
+**Status:** Active — v0.1–v0.3 complete; post-v0.3: SEM (ADR-008), REG same-file (ADR-005) + cross-file (ADR-009/010) shipped  
 **Last revised:** 2026-05-30
 
 ---
@@ -144,7 +144,7 @@ It operates in two modes:
 
 `docpact` follows the ruff/ty model for configuration, error codes, and fix modes.
 
-v0.1 is implemented in Python 3.12+ with `griffe` as the docstring parsing foundation. The implementation language is not part of the user-facing contract; a future major version may rewrite all or part of the implementation in another language (Rust via PyO3 is the most likely candidate) without changing the CLI, configuration, or output formats. See [ADR-001](../adr/ADR-001-implementation-language.md) for the full rationale.
+v0.1 is implemented in Python 3.11+ with `griffe` as the docstring parsing foundation. The implementation language is not part of the user-facing contract; a future major version may rewrite all or part of the implementation in another language (Rust via PyO3 is the most likely candidate) without changing the CLI, configuration, or output formats. See [ADR-001](../adr/ADR-001-implementation-language.md) for the full rationale.
 
 ---
 
