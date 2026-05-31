@@ -647,6 +647,20 @@ explicitly rejected. Recorded here so the reasoning is not relitigated.
   inline suppressions, which is more explicit, diff-friendly, and requires no
   out-of-band file to stay in sync. The inline approach also survives file renames.
 
+- **LSP server as a griffe replacement** — after adopting an LSP client for
+  cross-file (ADR-009), reuse the server to parse docstrings and drop griffe.
+  **Rejected — different layer, zero overlap.** griffe parses the *internal
+  structure of a docstring string* into Google/NumPy sections (`Args` keys,
+  `Returns`/`Raises` bodies); LSP resolves *symbols across files* and has no
+  concept of a docstring's section structure. The raw docstring text already
+  comes from stdlib `ast`, not griffe, so LSP would contribute nothing to the
+  parse — we'd still need a section parser. Worse, routing the per-function path
+  through a server would break the default `check`'s offline/zero-dep/fast/
+  deterministic guarantees (a server for every function, every run; non-
+  deterministic hover rendering). The keep-griffe decision stands on its own
+  (ADR-006 item 6: ~3% of runtime, no perf basis to reimplement); LSP is not a
+  candidate replacement and is far heavier for this task.
+
 ---
 
 ## Phase log

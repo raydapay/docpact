@@ -21,7 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from docpact.lsp import LSPClient
 from docpact.model.diagnostic import Severity
@@ -76,11 +77,16 @@ class CrossfileResult:
 
 
 def _uri_to_path(uri: str) -> Path | None:
-    """Convert a ``file://`` URI to a local path, or None for other schemes."""
+    """Convert a ``file://`` URI to a local path, or None for other schemes.
+
+    Uses ``url2pathname`` so the Windows drive-letter form converts correctly
+    (``file:///C:/x`` → ``C:\\x``), not just POSIX paths; it also handles the
+    percent-decoding. On POSIX it is effectively ``unquote``.
+    """
     parsed = urlparse(uri)
     if parsed.scheme != "file":
         return None
-    return Path(unquote(parsed.path))
+    return Path(url2pathname(parsed.path))
 
 
 def _collect_entries(py_files: list[Path], config: Config) -> list[tuple[Path, ToolRegistryEntry]]:
