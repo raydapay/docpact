@@ -9,10 +9,12 @@ deliberately does not.
 
 ## Installation
 
+Not yet published to PyPI — install from the repository:
+
 ```bash
-uv add --dev docpact
+uv add --dev "docpact @ git+https://github.com/raydapay/docpact.git"
 # or
-pip install docpact
+pip install "git+https://github.com/raydapay/docpact.git"
 ```
 
 Requires Python 3.11+.
@@ -123,7 +125,7 @@ under `--crossfile`:
 
 ```bash
 # install the bundled default server (ty), or use one you already have
-uv add "docpact[crossfile]"
+uv add "docpact[crossfile] @ git+https://github.com/raydapay/docpact.git"
 
 docpact check src/ --crossfile        # REG must also be in `select`
 ```
@@ -150,11 +152,12 @@ Notes and caveats:
 - **Static.** The server resolves without executing your code; `docpact` still
   never imports it.
 
-A blocking CI step looks like a normal `check` with the flag (and a server on
-`PATH`):
+A blocking CI step looks like a normal `check` with the flag, once `docpact` is
+installed with the `crossfile` extra (so a language server is on `PATH`):
 
 ```yaml
-- run: uv sync --extra crossfile
+# with docpact[crossfile] in your dev dependencies, ty is pulled in by uv sync
+- run: uv sync
 - run: uv run docpact check src/ --crossfile
 ```
 
