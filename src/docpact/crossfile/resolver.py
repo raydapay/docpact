@@ -3,7 +3,8 @@
 One LSP session does all cross-file work for a run and returns a `CrossfileResult`
 with three products, per ADR-010's "one resolution, two consumers":
 
-- **findings** — REG010 Args↔input_model parity (the deterministic FR-1 rule).
+- **findings** — REG010 (Args↔input_model parity) and REG011 (handler-signature
+  parity) — the deterministic cross-file rules.
 - **floor** — the set of `(resolved-file, function-name)` an imported handler is
   registered under, so per-file tier assignment can hold it to the Tier-3 bar.
 - **context** — a per-handler note (its tool name, the imported model's fields,
@@ -23,15 +24,22 @@ from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
 from docpact.lsp import LSPClient
+from docpact.model.diagnostic import Severity
 from docpact.parser.docstring import GoogleParser, NumpyParser
 from docpact.parser.pydantic_model import model_field_names
 from docpact.parser.registry import extract_tool_registry
+from docpact.parser.source import extract_functions
+from docpact.rules import load_builtin_rules
+from docpact.rules._registry import all_rules
 from docpact.rules.reg.reg010_input_model_parity import parity_findings
+from docpact.rules.reg.reg011_handler_signature_parity import signature_findings
 
 if TYPE_CHECKING:
     from docpact.config import Config
-    from docpact.model.diagnostic import RuleResult, Severity
+    from docpact.model.diagnostic import RuleResult
+    from docpact.model.function_info import FunctionInfo
     from docpact.model.tool_registry import ModelRef, ToolRegistryEntry
+    from docpact.rules._registry import RuleFn, RuleMetadata
 
 _DESCRIPTION_BUDGET = 500  # max chars of the registry description carried into a prompt
 
@@ -43,7 +51,7 @@ class CrossfileResult:
     Stability: beta
     """
 
-    findings: list[RuleResult]  # REG010 parity findings
+    findings: list[RuleResult]  # REG010 + REG011 cross-file findings
     floor: frozenset[tuple[str, str]]  # (resolved-file resolved-posix, function-name) → Tier 3
     context: dict[tuple[str, str], str]  # same key → semantic-prompt context note
 
@@ -86,21 +94,24 @@ def resolve_crossfile(
     py_files: list[Path],
     config: Config,
     root: Path,
-    severity: Severity,
 ) -> CrossfileResult:
     """Resolve all cross-file references in one LSP session.
 
+    Resolves each entry's ``input_model`` (REG010 parity) and ``handler`` (the
+    Tier-3 floor, semantic context, and REG011 signature parity). Per-rule
+    severities are read from config; a rule set to ``off`` contributes no
+    findings but the floor and context are always computed.
+
     Args:
         py_files: The files in scope for this run.
-        config: Resolved configuration (``registry`` field names and ``lsp``
-            server/timeout drive extraction and resolution).
+        config: Resolved configuration (``registry`` field names, ``lsp``
+            server/timeout, and per-rule severities).
         root: Project root, sent as the server's workspace folder.
-        severity: Resolved severity for REG010 findings.
 
     Returns:
-        A CrossfileResult (REG010 findings, the imported-handler Tier-3 floor,
-        and per-handler semantic context). Empty when no entry references an
-        imported symbol.
+        A CrossfileResult (REG010/REG011 findings, the imported-handler Tier-3
+        floor, and per-handler semantic context). Empty when no entry references
+        an imported symbol.
 
     Raises:
         LSPError: The language server could not be started or failed during the
@@ -112,10 +123,16 @@ def resolve_crossfile(
     if not pending:
         return CrossfileResult(findings=[], floor=frozenset(), context={})
 
+    load_builtin_rules()
+    rules = all_rules()
+    reg010_sev = _severity(config, rules, "REG010")
+    reg011_sev = _severity(config, rules, "REG011")
+
     findings: list[RuleResult] = []
     floor: set[tuple[str, str]] = set()
     context: dict[tuple[str, str], str] = {}
     field_cache: dict[tuple[str, str], frozenset[str] | None] = {}
+    func_cache: dict[str, dict[str, FunctionInfo]] = {}
 
     with LSPClient(config.lsp.server, root.resolve(), timeout=config.lsp.timeout) as client:
         for query_file in sorted({f.resolve() for f, _ in pending}):
@@ -129,45 +146,35 @@ def resolve_crossfile(
                 model_fields = _resolve_model_fields(
                     client, query_file, entry.input_model_ref, field_cache
                 )
-                if entry.description_arg_keys is not None and model_fields is not None:
-                    findings.extend(parity_findings(entry, file_path, model_fields, severity))
+                if (
+                    reg010_sev != Severity.OFF
+                    and entry.description_arg_keys is not None
+                    and model_fields is not None
+                ):
+                    findings.extend(parity_findings(entry, file_path, model_fields, reg010_sev))
             if entry.handler_ref is not None:
                 target = _resolve_target(client, query_file, entry.handler_ref)
                 if target is not None:
                     key = (target.resolve().as_posix(), entry.handler_ref.name)
                     floor.add(key)
                     context[key] = _context_note(entry, model_fields)
+                    if reg011_sev != Severity.OFF:
+                        handler = _resolve_handler_fn(target, entry.handler_ref.name, func_cache)
+                        if handler is not None:
+                            findings.extend(
+                                signature_findings(
+                                    entry, file_path, handler, model_fields, reg011_sev
+                                )
+                            )
 
     findings.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
     return CrossfileResult(findings=findings, floor=frozenset(floor), context=context)
 
 
-def check_input_model_parity(
-    py_files: list[Path],
-    config: Config,
-    root: Path,
-    severity: Severity,
-) -> list[RuleResult]:
-    """Return only the REG010 parity findings of a cross-file pass.
-
-    A thin wrapper over ``resolve_crossfile`` for callers that want just the
-    deterministic findings.
-
-    Args:
-        py_files: The files in scope.
-        config: Resolved configuration.
-        root: Project root (workspace folder).
-        severity: Resolved severity for REG010.
-
-    Returns:
-        The REG010 findings, sorted by location.
-
-    Raises:
-        LSPError: The server could not be started or failed during the run.
-
-    Stability: beta
-    """
-    return resolve_crossfile(py_files, config, root, severity).findings
+def _severity(config: Config, rules: dict[str, tuple[RuleMetadata, RuleFn]], code: str) -> Severity:
+    """Resolve a rule's severity from config, defaulting to its registered severity."""
+    meta = rules[code][0]
+    return config.rule_severities.get(code, meta.default_severity)
 
 
 def _resolve_target(client: LSPClient, query_file: Path, ref: ModelRef) -> Path | None:
@@ -202,6 +209,29 @@ def _read_model_fields(target: Path, class_name: str) -> frozenset[str] | None:
     except OSError:
         return None
     return model_field_names(source, class_name)
+
+
+def _resolve_handler_fn(
+    target: Path, name: str, cache: dict[str, dict[str, FunctionInfo]]
+) -> FunctionInfo | None:
+    """Return the module-level handler function in target by name, with caching."""
+    key = target.resolve().as_posix()
+    if key not in cache:
+        cache[key] = _read_functions(target)
+    return cache[key].get(name)
+
+
+def _read_functions(target: Path) -> dict[str, FunctionInfo]:
+    """Extract module-level functions of a file as a name→FunctionInfo map.
+
+    Returns an empty map when the file cannot be read or parsed — the handler is
+    then unresolved and REG011 is skipped (under-enforce, never guess).
+    """
+    try:
+        functions = extract_functions(target)
+    except (OSError, SyntaxError):
+        return {}
+    return {f.name: f for f in functions if f.containing_class is None}
 
 
 def _context_note(entry: ToolRegistryEntry, model_fields: frozenset[str] | None) -> str:

@@ -132,8 +132,10 @@ resolution also feeds the semantic layer (ADR-010 "one resolution, two consumers
   (`handler_field` config); `--crossfile` pre-pass + imported-handler Tier-3 floor;
   `semantic --crossfile` (floor → scope, resolved model fields + registry
   description → prompt context).
-- **Increment 2 — pending:** REG011 (imported-handler *signature* ↔ schema/model
-  parity), the cross-file analogue of REG001.
+- **Increment 2 — SHIPPED:** REG011 (imported-handler *signature* ↔ schema/model
+  parity), the cross-file analogue of REG001. Phantom-direction only; skips the
+  model-instance and `**kwargs` handler shapes to stay low-false-positive. Runs in
+  the same `--crossfile` pre-pass; resolver resolves per-rule severities from config.
 
 **Sequencing:** each step is independently shippable and non-breaking — Step 1 ships
 unused, Step 2 is backward-compatible, Step 3 is the opt-in rule, Step 4 is docs,

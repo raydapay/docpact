@@ -22,12 +22,13 @@ if TYPE_CHECKING:
 
 from docpact.cli import main
 from docpact.config import Config, LspConfig
-from docpact.crossfile.resolver import _uri_to_path, check_input_model_parity, resolve_crossfile
+from docpact.crossfile.resolver import _uri_to_path, resolve_crossfile
 from docpact.model.diagnostic import Severity
 from docpact.model.function_info import FunctionInfo, ParameterInfo
 from docpact.model.tool_registry import ModelRef, ToolRegistryEntry
 from docpact.parser.pydantic_model import model_field_names
 from docpact.rules.reg.reg010_input_model_parity import parity_findings
+from docpact.rules.reg.reg011_handler_signature_parity import signature_findings
 from docpact.semantic.analyzer import render_function
 
 _FAKE = Path(__file__).parent / "fixtures" / "fake_lsp_server.py"
@@ -179,7 +180,7 @@ def _workspace(tmp_path: Path, description: str, schemas: str = _SCHEMAS) -> tup
 def test_resolver_match_no_findings(tmp_path: Path) -> None:
     tools, schemas = _workspace(tmp_path, "Search.\n\nArgs:\n    query: q\n    limit: l\n")
     config = _config(tmp_path, "location", schemas.as_uri())
-    results = check_input_model_parity([tools], config, tmp_path, Severity.WARNING)
+    results = resolve_crossfile([tools], config, tmp_path).findings
     assert results == []
 
 
@@ -187,7 +188,7 @@ def test_resolver_reports_drift(tmp_path: Path) -> None:
     # Doc documents only 'query'; the model also has 'limit'.
     tools, schemas = _workspace(tmp_path, "Search.\n\nArgs:\n    query: q\n")
     config = _config(tmp_path, "location", schemas.as_uri())
-    results = check_input_model_parity([tools], config, tmp_path, Severity.WARNING)
+    results = resolve_crossfile([tools], config, tmp_path).findings
     assert len(results) == 1
     assert results[0].code == "REG010"
     assert "limit" in results[0].message
@@ -197,14 +198,14 @@ def test_resolver_unresolved_is_skipped(tmp_path: Path) -> None:
     tools, schemas = _workspace(tmp_path, "Search.\n\nArgs:\n    query: q\n")
     config = _config(tmp_path, "empty", schemas.as_uri())
     config = dataclasses.replace(config, lsp=LspConfig(server=config.lsp.server, timeout=0.3))
-    assert check_input_model_parity([tools], config, tmp_path, Severity.WARNING) == []
+    assert resolve_crossfile([tools], config, tmp_path).findings == []
 
 
 def test_resolver_non_pydantic_target_is_skipped(tmp_path: Path) -> None:
     plain = "class SearchInput:\n    query: str\n"
     tools, schemas = _workspace(tmp_path, "Search.\n\nArgs:\n    query: q\n", schemas=plain)
     config = _config(tmp_path, "location", schemas.as_uri())
-    assert check_input_model_parity([tools], config, tmp_path, Severity.WARNING) == []
+    assert resolve_crossfile([tools], config, tmp_path).findings == []
 
 
 def test_resolver_no_candidate_entries(tmp_path: Path) -> None:
@@ -213,7 +214,7 @@ def test_resolver_no_candidate_entries(tmp_path: Path) -> None:
     tools = tmp_path / "tools.py"
     tools.write_text('TOOLS = [{"name": "x", "parameters": {"properties": {}}}]\n')
     config = _config(tmp_path, "location", (tmp_path / "schemas.py").as_uri())
-    assert check_input_model_parity([tools], config, tmp_path, Severity.WARNING) == []
+    assert resolve_crossfile([tools], config, tmp_path).findings == []
 
 
 # --- CLI integration ----------------------------------------------------------
@@ -309,7 +310,7 @@ def _handler_workspace(tmp_path: Path) -> tuple[Path, Path]:
 def test_resolve_crossfile_floor_from_handler(tmp_path: Path) -> None:
     registry, handlers = _handler_workspace(tmp_path)
     config = _config(tmp_path, "location", handlers.as_uri())
-    result = resolve_crossfile([registry], config, tmp_path, Severity.WARNING)
+    result = resolve_crossfile([registry], config, tmp_path)
     assert (handlers.resolve().as_posix(), "search_cases") in result.floor
 
 
@@ -341,6 +342,131 @@ def test_cli_crossfile_floors_imported_handler(tmp_path: Path) -> None:
     assert _handler_findings(without.output) == []
     # With --crossfile, it is floored to Tier 3 → the extra section requirements fire.
     assert _handler_findings(with_cf.output)
+
+
+# --- increment 2: REG011 handler-signature parity (ADR-010) -------------------
+
+
+def _handler_fn(params: tuple[ParameterInfo, ...]) -> FunctionInfo:
+    """A minimal module-level FunctionInfo with the given parameters."""
+    return FunctionInfo(
+        name="search_cases",
+        file_path=Path("impl.py"),
+        line=10,
+        column=0,
+        parameters=params,
+        return_annotation="list",
+        decorators=(),
+        docstring_raw="Search.",
+        docstring_line=10,
+        containing_class=None,
+        def_start_offset=0,
+        def_end_offset=0,
+        docstring_start_offset=None,
+        docstring_end_offset=None,
+    )
+
+
+def _handler_entry(**kw: object) -> ToolRegistryEntry:
+    """A registry entry that names an imported handler."""
+    return ToolRegistryEntry(
+        name="search",
+        line=8,
+        column=4,
+        property_keys=kw.get("property_keys"),  # type: ignore[arg-type]
+        has_description=False,
+        input_model_ref=ModelRef(name="SearchInput", line=8, column=40),
+        handler_ref=ModelRef(name="search_cases", line=8, column=60),
+    )
+
+
+def _param(name: str, annotation: str | None = None, kind: str = "positional") -> ParameterInfo:
+    """A ParameterInfo shorthand."""
+    return ParameterInfo(name=name, annotation=annotation, default=None, kind=kind)
+
+
+def test_reg011_model_field_not_accepted() -> None:
+    entry = _handler_entry()
+    handler = _handler_fn((_param("query", "str"),))  # missing 'limit'
+    results = signature_findings(
+        entry, Path("t.py"), handler, frozenset({"query", "limit"}), Severity.WARNING
+    )
+    assert len(results) == 1
+    assert results[0].code == "REG011"
+    assert "limit" in results[0].message and "does not accept" in results[0].message
+
+
+def test_reg011_match_yields_nothing() -> None:
+    entry = _handler_entry()
+    handler = _handler_fn((_param("query", "str"), _param("limit", "int")))
+    assert (
+        signature_findings(
+            entry, Path("t.py"), handler, frozenset({"query", "limit"}), Severity.WARNING
+        )
+        == []
+    )
+
+
+def test_reg011_skips_model_instance_handler() -> None:
+    entry = _handler_entry()
+    handler = _handler_fn((_param("payload", "SearchInput"),))  # takes the whole model
+    assert (
+        signature_findings(
+            entry, Path("t.py"), handler, frozenset({"query", "limit"}), Severity.WARNING
+        )
+        == []
+    )
+
+
+def test_reg011_skips_var_keyword_handler() -> None:
+    entry = _handler_entry()
+    handler = _handler_fn((_param("kwargs", None, "var_keyword"),))
+    assert (
+        signature_findings(
+            entry, Path("t.py"), handler, frozenset({"query", "limit"}), Severity.WARNING
+        )
+        == []
+    )
+
+
+def test_reg011_schema_takes_precedence_over_model() -> None:
+    entry = _handler_entry(property_keys=frozenset({"query", "phantom"}))
+    handler = _handler_fn((_param("query", "str"), _param("limit", "int")))
+    results = signature_findings(
+        entry, Path("t.py"), handler, frozenset({"query", "limit"}), Severity.WARNING
+    )
+    # Declared from the schema (query, phantom); 'phantom' is not accepted.
+    assert [r.message for r in results if "phantom" in r.message]
+    assert all("schema" in r.message for r in results)
+
+
+def _impl_with_handler(tmp_path: Path, handler_src: str) -> tuple[Path, Path]:
+    """Write impl.py (SearchInput{query,limit} + a handler) and a registry for it."""
+    impl = tmp_path / "impl.py"
+    impl.write_text(
+        '"""Impl."""\n'
+        "from pydantic import BaseModel\n\n\n"
+        "class SearchInput(BaseModel):\n    query: str\n    limit: int\n\n\n" + handler_src
+    )
+    registry = tmp_path / "registry.py"
+    registry.write_text(
+        '"""Registry."""\n'
+        "from impl import SearchInput, search_cases\n\n\n"
+        "class ToolDefinition:\n    def __init__(self, **kw):\n        pass\n\n\n"
+        'TOOLS = [ToolDefinition(name="search", handler=search_cases, input_model=SearchInput)]\n'
+    )
+    return registry, impl
+
+
+def test_resolver_reg011_end_to_end(tmp_path: Path) -> None:
+    # Handler accepts only 'query'; the input model also declares 'limit'.
+    registry, impl = _impl_with_handler(
+        tmp_path, 'def search_cases(query: str) -> list:\n    """S."""\n    return []\n'
+    )
+    config = _config(tmp_path, "location", impl.as_uri())
+    findings = resolve_crossfile([registry, impl], config, tmp_path).findings
+    reg011 = [f for f in findings if f.code == "REG011"]
+    assert len(reg011) == 1 and "limit" in reg011[0].message
 
 
 # --- 5d: cross-file x semantic (ADR-010) --------------------------------------
@@ -383,7 +509,7 @@ def _impl_workspace(tmp_path: Path) -> tuple[Path, Path]:
 def test_resolve_crossfile_context_carries_model_fields(tmp_path: Path) -> None:
     registry, impl = _impl_workspace(tmp_path)
     config = _config(tmp_path, "location", impl.as_uri())
-    result = resolve_crossfile([registry, impl], config, tmp_path, Severity.WARNING)
+    result = resolve_crossfile([registry, impl], config, tmp_path)
     note = result.context[(impl.resolve().as_posix(), "search_cases")]
     assert "search" in note  # tool name
     assert "query" in note and "limit" in note  # imported model fields

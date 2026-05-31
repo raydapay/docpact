@@ -53,7 +53,7 @@ docpact generate src/                 # insert stub docstrings for undocumented 
 docpact list-rules                    # list all rules with severity and fixability
 docpact bench src/                    # measure serial vs parallel on your tree; recommends a jobs value
 docpact semantic src/ --dry-run       # LLM-backed meaning check (advisory); --dry-run shows prompts, no API call
-docpact check src/ --crossfile        # opt-in cross-file rules (REG010) via an LSP server
+docpact check src/ --crossfile        # opt-in cross-file rules (REG010/REG011) via an LSP server
 ```
 
 ### Semantic mode (`docpact semantic`)
@@ -69,11 +69,20 @@ nothing. See [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
 ### Cross-file mode (`--crossfile`)
 
 Opt-in, and off by default — the standard `check` is per-file, offline, and
-fast. `--crossfile` runs the `REG010` rule: for a tool-registry entry that names
-an **imported** `input_model` (a Pydantic model in another module) and documents
-its parameters in the description's `Args:` section, it checks that the two
-agree — flagging a model field the docs omit, or a documented arg with no
-matching field.
+fast. `--crossfile` runs the cross-file `REG` rules against tool-registry entries
+that reference **imported** symbols:
+
+- **REG010** — a tool's documented `Args:` is out of parity with its imported
+  `input_model` fields (a model field the docs omit, or a documented arg with no
+  matching field).
+- **REG011** — a parameter the tool declares (its JSON schema, or its imported
+  `input_model` fields) is not accepted by its imported `handler`'s signature —
+  the cross-file analogue of REG001.
+
+It also applies a **cross-file Tier-3 floor**: a function registered as an
+imported handler is held to the agent-facing documentation bar in its own file,
+and `docpact semantic --crossfile` reviews it (and feeds the imported model's
+fields into the prompt). See [ADR-010](docs/adr/ADR-010-cross-file-tier-floor-and-semantic.md).
 
 Resolution is delegated to a language server over the standard Language Server
 Protocol — `docpact` asks it to resolve the imported symbol to its defining
@@ -98,7 +107,7 @@ pinned server. See [ADR-009](docs/adr/ADR-009-cross-file-via-lsp.md).
 | `FIX` | FIX001–FIX004 | Suppression hygiene: bare suppression comments, missing `-- reason`, stale suppressions, misplaced suppression comments |
 | `PARSE` | PARSE001 | Parse-time errors: file contains a Python syntax error and cannot be checked; fires before all other rules |
 | `REG` *(opt-in)* | REG001–REG002 | Tool-registry consistency: a same-file `ToolDefinition`/dict registry whose JSON-Schema parameter is absent from the function signature. Add `REG` to `select` to enable. |
-| `REG` *(opt-in, cross-file)* | REG010 | Cross-file: a tool entry's documented `Args:` out of parity with its **imported** `input_model` fields. Resolved via an LSP server; runs only under `docpact check --crossfile`. See below. |
+| `REG` *(opt-in, cross-file)* | REG010, REG011 | Cross-file: a tool entry's documented `Args:` out of parity with its **imported** `input_model` fields (REG010), or a declared parameter the **imported** `handler` does not accept (REG011). Resolved via an LSP server; run only under `docpact check --crossfile`. See below. |
 | `SEM` *(opt-in, advisory)* | SEM001 | Meaning, not structure: LLM-judged cargo-cult restatement, an unsurfaced precondition/constraint, an empty Returns. Run via `docpact semantic` — never part of `check`; non-deterministic and advisory. |
 
 Full rule documentation: [`docs/rules/`](docs/rules/).
@@ -240,7 +249,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 998 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 1004 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 

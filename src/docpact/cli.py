@@ -542,10 +542,8 @@ def _compute_crossfile(py_files: list[Path], config: Config, root: Path) -> Cros
             err=True,
         )
         return None
-    meta, _ = rules["REG010"]
-    severity = config.rule_severities.get("REG010", meta.default_severity)
     try:
-        result = resolve_crossfile(py_files, config, root, severity)
+        return resolve_crossfile(py_files, config, root)
     except LSPError as exc:
         click.echo(
             f"warning: cross-file analysis skipped — {exc} "
@@ -553,10 +551,6 @@ def _compute_crossfile(py_files: list[Path], config: Config, root: Path) -> Cros
             err=True,
         )
         return None
-    if severity == Severity.OFF:
-        # Parity findings suppressed; the Tier-3 floor still applies.
-        return dataclasses.replace(result, findings=[])
-    return result
 
 
 def _compute_crossfile_for_semantic(
@@ -570,7 +564,7 @@ def _compute_crossfile_for_semantic(
     missing/failing server, with a note, so the semantic run still proceeds.
     """
     try:
-        return resolve_crossfile(py_files, config, root, Severity.WARNING)
+        return resolve_crossfile(py_files, config, root)
     except LSPError as exc:
         click.echo(
             f"warning: cross-file resolution skipped — {exc} "

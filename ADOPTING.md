@@ -107,12 +107,15 @@ pluggable — see ADR-008).
 
 ## Cross-file checks (`--crossfile`, opt-in)
 
-If your tools register an **imported** Pydantic model as their `input_model` and
-also document those parameters in the description's `Args:` section, `REG010`
-checks that the documented args and the model's actual fields stay in parity —
-catching a field added to the model but never documented, or a documented arg
-that no longer exists. This is the cross-file complement to the same-file `REG`
-rules, and the declarative replacement for a hand-written "tool contract" test.
+If your tools register **imported** symbols — a Pydantic model as `input_model`,
+a function as `handler` — the cross-file `REG` rules keep their contracts honest:
+`REG010` checks the documented `Args:` against the imported model's fields (a
+field added but never documented, or a documented arg that no longer exists);
+`REG011` checks that the imported handler's signature actually accepts the
+parameters the tool declares. A registered imported handler is also held to the
+Tier-3 documentation bar in its own file. This is the cross-file complement to
+the same-file `REG` rules, and the declarative replacement for hand-written
+"tool contract" tests.
 
 It is **deterministic** (unlike `docpact semantic`), so it *can* gate CI — but it
 needs a language server to resolve imports, so it is off by default and runs only

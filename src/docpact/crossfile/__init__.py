@@ -13,10 +13,6 @@ failing server surfaces as ``LSPError`` for the caller to report — the pass
 never crashes the run.
 """
 
-from docpact.crossfile.resolver import (
-    CrossfileResult,
-    check_input_model_parity,
-    resolve_crossfile,
-)
+from docpact.crossfile.resolver import CrossfileResult, resolve_crossfile
 
-__all__ = ["CrossfileResult", "check_input_model_parity", "resolve_crossfile"]
+__all__ = ["CrossfileResult", "resolve_crossfile"]
