@@ -1,7 +1,7 @@
 """Provider-agnostic LSP client (ADR-009).
 
-Graduates the cross-file resolution spike (`scripts/spike_lsp.py`) into a
-shipped client. It spawns a configured language server, performs the
+Graduates the original cross-file resolution spike into a shipped client.
+It spawns a configured language server, performs the
 `initialize`/`initialized` handshake, opens documents, and asks
 `textDocument/definition` to resolve an imported symbol to its defining file.
 The wire details — Content-Length framing, the JSON-RPC reader thread,
