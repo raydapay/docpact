@@ -55,6 +55,7 @@ docpact bench src/                    # measure serial vs parallel on your tree;
 docpact bench src/ --crossfile        # also measure the cross-file pre-pass cost (startup vs query time)
 docpact semantic src/ --dry-run       # LLM-backed meaning check (advisory); --dry-run shows prompts, no API call
 docpact semantic src/ --changed-only origin/main  # scope the meaning check to a PR's changed files
+docpact semantic src/ --scan-modes module          # SEM002: weak module docstrings (gpt-4o-class model only!)
 docpact check src/ --crossfile        # opt-in cross-file rules (REG010/REG011) via an LSP server
 ```
 
@@ -85,11 +86,12 @@ configurable if you want more. See
 
 > ### ⚠️ Module-level scan is model-sensitive — do not run it on a weak model
 >
-> Module-level semantic scan (`SEM002`, weak *module* docstrings — landing per
-> [ADR-013](docs/adr/ADR-013-module-level-semantic-scan.md)) is **only reliable on a
-> `gpt-4o`-class model**. On a weak model such as `gpt-4o-mini` it produced a
-> **43–71% false-positive rate** on real, well-written module docstrings in our
-> validation; on `gpt-4o` the same docstrings came back with **0% false positives**.
+> Module-level semantic scan (`SEM002`, weak *module* docstrings — opt in with
+> `--scan-modes module`; see [ADR-013](docs/adr/ADR-013-module-level-semantic-scan.md))
+> is **only reliable on a `gpt-4o`-class model**. On a weak model such as
+> `gpt-4o-mini` it produced a **43–71% false-positive rate** on real, well-written
+> module docstrings in our validation; on `gpt-4o` the same docstrings came back with
+> **0% false positives**.
 >
 > **Why:** judging a *function* docstring (SEM001) is a tight, local call against the
 > signature — `gpt-4o-mini` handles it. Judging a *module* docstring means reasoning
@@ -270,7 +272,7 @@ a warm server, not more concurrency. Run it once on your repo to know your numbe
 | `PARSE` | PARSE001 | Parse-time errors: file contains a Python syntax error and cannot be checked; fires before all other rules |
 | `REG` *(opt-in)* | REG001–REG002, REG010 | Tool-registry consistency, same-file and offline: a `ToolDefinition`/`ToolSpec`/dict record (in a list, an assignment, or a registration call like `register_tool(...)`) whose JSON-Schema parameter is absent from the signature (REG001), or whose documented `Args:` is out of parity with a same-file `input_model`'s fields (REG010). Add `REG` to `select`. See below. |
 | `REG` *(opt-in, cross-file)* | REG010, REG011 | Cross-file: a tool entry's documented `Args:` out of parity with its **imported** `input_model` fields (REG010, imported-model leg), or a declared parameter the **imported** `handler` does not accept (REG011). Resolved via an LSP server; run only under `docpact check --crossfile`. See below. |
-| `SEM` *(opt-in, advisory)* | SEM001 | Meaning, not structure: LLM-judged cargo-cult restatement, an unsurfaced precondition/constraint, an empty Returns. Run via `docpact semantic` — never part of `check`; non-deterministic and advisory. |
+| `SEM` *(opt-in, advisory)* | SEM001, SEM002 | Meaning, not structure: LLM-judged. SEM001 — a *function* docstring that's cargo-cult, hides a precondition/constraint, or has an empty Returns. SEM002 — a *module* docstring out of scope with its symbols or pure boilerplate (opt in with `--scan-modes module`; **gpt-4o-class model only**, see warning above). Run via `docpact semantic` — never part of `check`; non-deterministic and advisory. |
 
 Full rule documentation: [`docs/rules/`](docs/rules/).
 
@@ -354,6 +356,7 @@ api_base = "https://models.github.ai/inference"   # e.g. GitHub Models (free to 
 api_key_env = "GITHUB_TOKEN"                 # name of the env var holding the key — never the key
 # min_tier = 3                               # scope to agent-facing tools (default 3)
 # finding_threshold = "weak"                 # "weak" surfaces weak+empty; "empty" only the vacuous
+# scan_modes = ["function"]                  # add "module" for SEM002 — gpt-4o-class model ONLY (see ⚠️ above)
 
 # Opt-in: cross-file analysis (imported models/handlers) via an LSP server.
 # Used only by `check --crossfile`; the same-file REG010 leg needs none of this.
@@ -421,7 +424,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 1035 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 1049 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 

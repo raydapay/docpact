@@ -22,6 +22,7 @@ from docpact.model.diagnostic import RuleResult, Severity, SourceLocation
 
 if TYPE_CHECKING:
     from docpact.model.function_info import FunctionInfo
+    from docpact.model.module_info import ModuleInfo
     from docpact.semantic.backend import LLMBackend
 
 SYSTEM = (
@@ -62,7 +63,7 @@ class SemanticReport:
     """
 
     results: list[RuleResult]
-    functions_reviewed: int
+    units_reviewed: int  # functions (SEM001) or modules (SEM002), per the scan mode
     requests: int
 
 
@@ -190,6 +191,152 @@ def _extract_json(content: str) -> dict:
         raise
 
 
+# --- module-level scan (SEM002; ADR-013) --------------------------------------
+
+# The prompt the spike validated at 0% false positives on gpt-4o. The
+# "consistency, never completeness" clause is load-bearing — without it the FP
+# rate is 71% (the model demands the docstring enumerate every symbol).
+MODULE_SYSTEM = (
+    "You audit a Python MODULE docstring for two specific defects. Default to good; "
+    "flag a dimension 'weak' ONLY when the defect is unmistakable, and then you MUST "
+    "quote the exact offending span. If you cannot quote a span, that dimension is good.\n"
+    "- scope: is the docstring's stated purpose CONSISTENT with the module's listed public "
+    "symbols? Weak ONLY when it describes a capability or domain the symbols do not support, "
+    "or names a symbol that does not exist. A docstring that accurately describes the purpose "
+    "is GOOD even if it names no symbol. NEVER flag for omitting, under-listing, or failing to "
+    "enumerate symbols — symbol-list completeness is NOT a defect.\n"
+    "- orientation: is the docstring contentful, or pure boilerplate ('Utilities.', 'The "
+    "widgets module.')? Weak ONLY for near-empty restatement; never for brevity, for not "
+    "comparing to sibling modules, or for not spelling out when to use it.\n"
+    "Most real module docstrings are GOOD on both. Respond ONLY with JSON: "
+    '{"findings":[{"name":str,"scope":"good|weak","scope_evidence":str,'
+    '"orientation":"good|weak","orientation_evidence":str}]}. "name" MUST echo the module '
+    "label exactly as given. For a good dimension, its evidence is an empty string."
+)
+
+
+def render_module(module: ModuleInfo) -> str:
+    """Render one module as a labelled docstring + public-symbol list for the prompt.
+
+    Args:
+        module: The module to render.
+
+    Returns:
+        A ``module: <path>`` label line, the triple-quoted docstring, and the
+        module's public symbol list — the unit SEM002 judges.
+
+    Stability: beta
+    """
+    doc = module.docstring_raw.strip()
+    syms = "\n".join(f"  - {s}" for s in module.symbols) or "  (none)"
+    return f'module: {module.file_path}\ndocstring:\n"""{doc}"""\npublic symbols:\n{syms}'
+
+
+def build_module_batches(
+    modules: list[ModuleInfo], *, batch_chars: int = 24000
+) -> list[list[ModuleInfo]]:
+    """Group modules into batches under a per-request character budget.
+
+    Args:
+        modules: Modules to review, in collection order.
+        batch_chars: Approximate per-request character budget.
+
+    Returns:
+        A list of batches; a single oversized module still gets its own batch.
+
+    Stability: beta
+    """
+    batches: list[list[ModuleInfo]] = []
+    cur: list[ModuleInfo] = []
+    size = 0
+    for module in modules:
+        rendered = len(render_module(module))
+        if cur and size + rendered > batch_chars:
+            batches.append(cur)
+            cur, size = [], 0
+        cur.append(module)
+        size += rendered
+    if cur:
+        batches.append(cur)
+    return batches
+
+
+def module_user_prompt(batch: list[ModuleInfo]) -> str:
+    """Build the user message enumerating a batch of modules to review.
+
+    Args:
+        batch: The modules in this request.
+
+    Returns:
+        A single user-message string.
+
+    Stability: beta
+    """
+    body = "\n\n---\n\n".join(render_module(m) for m in batch)
+    return f"Review these {len(batch)} module docstrings. Return JSON only.\n\n{body}"
+
+
+def analyze_modules(
+    modules: list[ModuleInfo],
+    backend: LLMBackend,
+    *,
+    severity: Severity = Severity.WARNING,
+) -> SemanticReport:
+    """Run module-level semantic analysis and return SEM002 findings (ADR-013).
+
+    Args:
+        modules: Modules to review (the caller scopes which files are in play).
+        backend: The LLM backend to call. Must be a gpt-4o-class model — weak
+            models false-positive heavily on this task (ADR-013).
+        severity: Severity to attach to emitted SEM002 results.
+
+    Returns:
+        A SemanticReport with one SEM002 RuleResult per module that has at least
+        one weak rubric dimension (scope and/or orientation), located at the
+        module's first line, plus the counts of modules reviewed and requests.
+
+    Raises:
+        SemanticError: A backend call failed (propagated from the backend).
+
+    Constraints:
+        Non-deterministic and advisory, like SEM001; an unparseable batch is
+        skipped rather than failing the run. `finding_threshold` does not apply
+        (module verdicts have no `empty` level); use the SEM002 severity to tune.
+
+    Stability: beta
+    """
+    by_label = {str(m.file_path): m for m in modules}
+    results: list[RuleResult] = []
+    batches = build_module_batches(modules)
+    for batch in batches:
+        reply = backend.complete(MODULE_SYSTEM, module_user_prompt(batch))
+        try:
+            parsed = _extract_json(reply)
+        except json.JSONDecodeError:
+            continue  # advisory: skip an unparseable batch rather than fail
+        for finding in parsed.get("findings", []):
+            module = by_label.get(finding.get("name", ""))
+            if module is None:
+                continue
+            parts: list[str] = []
+            for dim in ("scope", "orientation"):
+                if finding.get(dim) == "weak":
+                    parts.append(f"{dim}: {finding.get(f'{dim}_evidence', '') or dim}")
+            if not parts:
+                continue
+            results.append(
+                RuleResult(
+                    code="SEM002",
+                    severity=severity,
+                    message="; ".join(parts),
+                    location=SourceLocation(file_path=module.file_path, line=1, column=0),
+                )
+            )
+
+    results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
+    return SemanticReport(results=results, units_reviewed=len(modules), requests=len(batches))
+
+
 # Verdict severity rank, ascending. A verdict surfaces as a finding only when
 # its rank is at least the configured finding_threshold's rank (config §15.1).
 # "good" is absent — it never produces a finding.
@@ -264,4 +411,4 @@ def analyze(
             )
 
     results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
-    return SemanticReport(results=results, functions_reviewed=len(functions), requests=len(batches))
+    return SemanticReport(results=results, units_reviewed=len(functions), requests=len(batches))

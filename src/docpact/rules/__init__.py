@@ -60,6 +60,7 @@ def load_builtin_rules() -> None:
     import docpact.rules.reg.reg010_input_model_parity
     import docpact.rules.reg.reg011_handler_signature_parity
     import docpact.rules.sem.sem001_weak_docstring
+    import docpact.rules.sem.sem002_weak_module_docstring
     import docpact.rules.ty.ty001_none_return_with_returns
     import docpact.rules.ty.ty002_nonnone_return_empty  # noqa: F401
 

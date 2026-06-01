@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
+from docpact.parser.source import (
+    extract_functions,
+    extract_module_info,
+    parse_all_names,
+    parse_tier_pragma,
+)
 
 if TYPE_CHECKING:
     from docpact.model.function_info import FunctionInfo
@@ -533,3 +538,36 @@ def test_parse_tier_pragma_zero_not_matched() -> None:
 
 def test_parse_tier_pragma_in_middle_of_line() -> None:
     assert parse_tier_pragma("    async def handler(self):  # docpact: tier=3 -- MCP") == 3
+
+
+# ---------------------------------------------------------------------------
+# extract_module_info (SEM002; ADR-013)
+# ---------------------------------------------------------------------------
+
+
+def test_module_info_collects_docstring_and_public_symbols(tmp_path: Path) -> None:
+    src = tmp_path / "m.py"
+    src.write_text(
+        '"""Module purpose."""\n\n\n'
+        'def pub(x):\n    """Do a public thing."""\n\n\n'
+        'class Widget:\n    """A widget."""\n\n\n'
+        'def _private():\n    """Hidden."""\n'
+    )
+    info = extract_module_info(src)
+    assert info is not None
+    assert info.docstring_raw == "Module purpose."
+    assert info.symbols == ("pub — Do a public thing.", "Widget — A widget.")  # _private excluded
+
+
+def test_module_info_none_without_docstring(tmp_path: Path) -> None:
+    src = tmp_path / "m.py"
+    src.write_text("def pub():\n    pass\n")
+    assert extract_module_info(src) is None
+
+
+def test_module_info_symbol_without_docstring(tmp_path: Path) -> None:
+    src = tmp_path / "m.py"
+    src.write_text('"""M."""\n\n\ndef pub():\n    pass\n')
+    info = extract_module_info(src)
+    assert info is not None
+    assert info.symbols == ("pub — (no docstring)",)

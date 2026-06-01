@@ -69,8 +69,11 @@ class SemanticConfig:
     as a finding — ``"weak"`` (default) surfaces both ``weak`` and ``empty``
     docstring verdicts; ``"empty"`` surfaces only the wholly-vacuous ``empty``
     ones, for teams that opt SEM into a gate and want the lowest-noise signal.
-    Off until a backend/model is configured and `docpact semantic` is invoked —
-    never touched by `check`.
+    ``scan_modes`` selects which scans run — ``"function"`` (SEM001, default)
+    and/or ``"module"`` (SEM002; ADR-013). Module scan is model-sensitive and off
+    by default; only enable it with a gpt-4o-class model. Off until a
+    backend/model is configured and `docpact semantic` is invoked — never touched
+    by `check`.
 
     Stability: beta
     """
@@ -81,6 +84,7 @@ class SemanticConfig:
     api_key_env: str = "OPENAI_API_KEY"
     min_tier: int = 3
     finding_threshold: str = "weak"
+    scan_modes: tuple[str, ...] = ("function",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,6 +331,18 @@ def _parse_semantic(raw: object) -> SemanticConfig:
             raise ConfigError('semantic.finding_threshold: must be "weak" or "empty"')
         finding_threshold = v
 
+    scan_modes = defaults.scan_modes
+    if "scan_modes" in data:
+        modes = _parse_string_list(data["scan_modes"], "semantic.scan_modes")
+        if not modes:
+            raise ConfigError("semantic.scan_modes: must list at least one mode")
+        invalid = [m for m in modes if m not in ("function", "module")]
+        if invalid:
+            raise ConfigError(
+                f"semantic.scan_modes: unknown mode(s) {invalid}; allowed: function, module"
+            )
+        scan_modes = modes
+
     return SemanticConfig(
         backend=_str("backend", defaults.backend),
         model=_str("model", defaults.model),
@@ -334,6 +350,7 @@ def _parse_semantic(raw: object) -> SemanticConfig:
         api_key_env=_str("api_key_env", defaults.api_key_env),
         min_tier=min_tier,
         finding_threshold=finding_threshold,
+        scan_modes=scan_modes,
     )
 
 

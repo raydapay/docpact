@@ -54,7 +54,12 @@ from docpact.output import (
 from docpact.parser.docstring import GoogleParser, NumpyParser
 from docpact.parser.pydantic_model import model_field_names
 from docpact.parser.registry import extract_tool_registry
-from docpact.parser.source import extract_functions, parse_all_names, parse_tier_pragma
+from docpact.parser.source import (
+    extract_functions,
+    extract_module_info,
+    parse_all_names,
+    parse_tier_pragma,
+)
 from docpact.rules import load_builtin_rules
 from docpact.rules._registry import RuleConfig, RuleFn, RuleMetadata, all_rules
 from docpact.rules.doc.doc002_module_docstring import check_module_docstring
@@ -68,9 +73,13 @@ from docpact.rules.parse.parse001_syntax_error import check_syntax_error as chec
 from docpact.rules.reg.reg001_schema_phantom_param import check_registry_phantom_params
 from docpact.rules.reg.reg002_unmatched_entry import check_unmatched_entries
 from docpact.rules.reg.reg010_input_model_parity import parity_findings
+from docpact.semantic.analyzer import MODULE_SYSTEM as _SEM_MODULE_SYSTEM
 from docpact.semantic.analyzer import SYSTEM as _SEM_SYSTEM
 from docpact.semantic.analyzer import analyze as _sem_analyze
+from docpact.semantic.analyzer import analyze_modules as _sem_analyze_modules
 from docpact.semantic.analyzer import build_batches as _sem_build_batches
+from docpact.semantic.analyzer import build_module_batches as _sem_build_module_batches
+from docpact.semantic.analyzer import module_user_prompt as _sem_module_user_prompt
 from docpact.semantic.analyzer import user_prompt as _sem_user_prompt
 from docpact.semantic.backend import SemanticError, make_backend
 from docpact.suppress import apply_suppressions, parse_suppressions
@@ -81,6 +90,7 @@ load_builtin_rules()
 if TYPE_CHECKING:
     from docpact.model.diagnostic import RuleResult
     from docpact.model.function_info import FunctionInfo
+    from docpact.model.module_info import ModuleInfo
     from docpact.model.tool_registry import ToolRegistryEntry
 
 
@@ -1428,6 +1438,23 @@ def _collect_semantic_functions(
     return out
 
 
+def _collect_semantic_modules(py_files: list[Path]) -> list[ModuleInfo]:
+    """Collect ModuleInfo for every file with a module docstring (SEM002; ADR-013).
+
+    Files without a module docstring are skipped — presence is DOC002's concern.
+    Unreadable or unparseable files are skipped (under-enforce, never guess).
+    """
+    out: list[ModuleInfo] = []
+    for file_path in py_files:
+        try:
+            info = extract_module_info(file_path)
+        except (OSError, SyntaxError):
+            continue
+        if info is not None:
+            out.append(info)
+    return out
+
+
 @main.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
 @click.option(
@@ -1454,6 +1481,15 @@ def _collect_semantic_functions(
     "The cheapest cost control — review only what a PR touches.",
 )
 @click.option(
+    "--scan-modes",
+    "cli_scan_modes",
+    multiple=True,
+    type=click.Choice(["function", "module"]),
+    help="Scan modes to run; overrides config (default: function). 'module' enables "
+    "SEM002 (weak module docstrings) — MODEL-SENSITIVE: use only a gpt-4o-class model; "
+    "weak models false-positive heavily (see README).",
+)
+@click.option(
     "--crossfile",
     "crossfile",
     is_flag=True,
@@ -1468,6 +1504,7 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
     output_format: str,
     exit_zero: bool,
     changed_only: str | None,
+    cli_scan_modes: tuple[str, ...],
     crossfile: bool,
 ) -> None:
     """LLM-backed semantic docstring analysis (advisory, opt-in).
@@ -1482,6 +1519,9 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
     cfg_result = load_config(Path.cwd())
     config, root = cfg_result.config, cfg_result.root
     scope = min_tier if min_tier is not None else config.semantic.min_tier
+    scan_modes = tuple(cli_scan_modes) if cli_scan_modes else config.semantic.scan_modes
+    do_function = "function" in scan_modes
+    do_module = "module" in scan_modes
 
     py_files = _collect_py_files(paths, config, root)
     if changed_only is not None:
@@ -1490,54 +1530,84 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
 
     # Cross-file resolution (ADR-010): floor promotes imported handlers into
     # scope; context enriches each prompt with the imported contract. Optional,
-    # degrades gracefully if no server is available.
+    # degrades gracefully if no server is available. Function scan only.
     floor: frozenset[tuple[str, str]] = frozenset()
     context: dict[tuple[str, str], str] = {}
-    if crossfile:
+    if crossfile and do_function:
         cf = _compute_crossfile_for_semantic(py_files, config, root)
         if cf is not None:
             floor, context = cf.floor, cf.context
 
-    functions = _collect_semantic_functions(py_files, config, root, scope, floor)
-    if not functions:
-        click.echo(f"No functions in scope (tier >= {scope}).")
+    functions = (
+        _collect_semantic_functions(py_files, config, root, scope, floor) if do_function else []
+    )
+    modules = _collect_semantic_modules(py_files) if do_module else []
+    if not functions and not modules:
+        click.echo(f"Nothing in scope (functions tier >= {scope}; modules with a docstring).")
         return
 
     if dry_run:
-        batches = _sem_build_batches(functions, context=context)
-        click.echo(f"{len(functions)} functions → {len(batches)} request(s)\n")
-        click.echo(f"=== SYSTEM ===\n{_SEM_SYSTEM}\n")
-        for i, batch in enumerate(batches, 1):
-            click.echo(f"=== REQUEST {i}/{len(batches)} ({len(batch)} functions) ===")
-            click.echo(_sem_user_prompt(batch, context))
-            click.echo("")
+        if functions:
+            fb = _sem_build_batches(functions, context=context)
+            click.echo(f"function scan: {len(functions)} function(s) → {len(fb)} request(s)\n")
+            click.echo(f"=== SYSTEM (function) ===\n{_SEM_SYSTEM}\n")
+            for i, batch in enumerate(fb, 1):
+                click.echo(f"=== REQUEST {i}/{len(fb)} ({len(batch)} functions) ===")
+                click.echo(_sem_user_prompt(batch, context))
+                click.echo("")
+        if modules:
+            mb = _sem_build_module_batches(modules)
+            click.echo(f"module scan: {len(modules)} module(s) → {len(mb)} request(s)\n")
+            click.echo(f"=== SYSTEM (module) ===\n{_SEM_MODULE_SYSTEM}\n")
+            for i, batch in enumerate(mb, 1):
+                click.echo(f"=== REQUEST {i}/{len(mb)} ({len(batch)} modules) ===")
+                click.echo(_sem_module_user_prompt(batch))
+                click.echo("")
         click.echo("Dry run — no API call, no code sent.")
         return
 
-    severity = config.rule_severities.get("SEM001", Severity.WARNING)
+    results: list[RuleResult] = []
+    requests = 0
     try:
         backend = make_backend(config.semantic)
-        report = _sem_analyze(
-            functions,
-            backend,
-            severity=severity,
-            threshold=config.semantic.finding_threshold,
-            context=context,
-        )
+        if functions:
+            fr = _sem_analyze(
+                functions,
+                backend,
+                severity=config.rule_severities.get("SEM001", Severity.WARNING),
+                threshold=config.semantic.finding_threshold,
+                context=context,
+            )
+            results.extend(fr.results)
+            requests += fr.requests
+        if modules:
+            mr = _sem_analyze_modules(
+                modules,
+                backend,
+                severity=config.rule_severities.get("SEM002", Severity.WARNING),
+            )
+            results.extend(mr.results)
+            requests += mr.requests
     except SemanticError as exc:
         raise click.UsageError(str(exc)) from exc
+    results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
 
     if output_format == "json":
-        click.echo(format_json(report.results, Path.cwd()))
+        click.echo(format_json(results, Path.cwd()))
     else:
-        if report.results:
-            click.echo(format_text(report.results, Path.cwd()))
+        if results:
+            click.echo(format_text(results, Path.cwd()))
+        reviewed = []
+        if do_function:
+            reviewed.append(f"{len(functions)} function(s)")
+        if do_module:
+            reviewed.append(f"{len(modules)} module(s)")
         click.echo(
-            f"Reviewed {report.functions_reviewed} function(s) in {report.requests} request(s); "
-            f"{len(report.results)} finding(s). [advisory — non-deterministic]"
+            f"Reviewed {' and '.join(reviewed)} in {requests} request(s); "
+            f"{len(results)} finding(s). [advisory — non-deterministic]"
         )
 
-    if report.results and not exit_zero:
+    if results and not exit_zero:
         sys.exit(1)
 
 

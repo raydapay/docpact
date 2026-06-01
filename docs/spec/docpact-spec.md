@@ -1,8 +1,8 @@
 # docpact — Specification
 
-**Version:** 0.4.4  
-**Status:** Active — v0.1–v0.3 complete; post-v0.3: SEM (ADR-008) + `finding_threshold`/`--changed-only`, REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped  
-**Last revised:** 2026-05-31
+**Version:** 0.4.5  
+**Status:** Active — v0.1–v0.3 complete; post-v0.3: SEM (ADR-008) SEM001 + SEM002 module scan (ADR-013) + `finding_threshold`/`--changed-only`/`scan_modes`, REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped  
+**Last revised:** 2026-06-01
 
 ---
 
@@ -658,16 +658,18 @@ LLM credentials. Advisory and non-deterministic; designed for scheduled CI / pre
 review, not pre-commit, not a blocking gate by default.
 
 Emits `SEM`-namespaced `RuleResult` objects through the standard output formatters.
-**Shipped (ADR-008):** `SEM001` (weak/empty docstring — cargo-cult, unsurfaced
-precondition/constraint, empty Returns); the `--dry-run`, `--min-tier`, `--format`,
-`--exit-zero`, and `--changed-only` options; the `finding_threshold` config (least-severe
-verdict surfaced — `"weak"` (default) surfaces `weak`+`empty`, `"empty"` surfaces only
-`empty`); and a **pluggable LLM backend** (`LLMBackend.complete` protocol + factory; one
-`openai-compat` adapter covering GitHub Models / OpenAI / local servers, with other
-providers added as adapter classes). **Designed, not yet built:** `--sample-rate`,
-module-level scans (and their `scan_modes`/`context_files` config), the `any-llm` backend,
-and content-hash caching. The DOC051/REG050 *intent* (constraint surfacing) is delivered
-here as SEM001; those deterministic codes stay reserved.
+**Shipped (ADR-008, ADR-013):** `SEM001` (weak/empty *function* docstring — cargo-cult,
+unsurfaced precondition/constraint, empty Returns) and `SEM002` (weak *module* docstring —
+scope/orientation; ADR-013, model-sensitive); the `--dry-run`, `--min-tier`, `--format`,
+`--exit-zero`, `--changed-only`, and `--scan-modes` options; the `finding_threshold` config
+(least-severe verdict surfaced — `"weak"` (default) surfaces `weak`+`empty`, `"empty"` surfaces
+only `empty`); the `scan_modes` config (`function` and/or `module`, default `function`); and a
+**pluggable LLM backend** (`LLMBackend.complete` protocol + factory; one `openai-compat`
+adapter covering GitHub Models / OpenAI / local servers, with other providers added as adapter
+classes). **Designed, not yet built:** `--sample-rate`, `context_files` (SEM002 needs only the
+module's symbols — ADR-013), the `any-llm` backend, and content-hash caching. The DOC051/REG050
+*intent* (constraint surfacing) is delivered here as SEM001; those deterministic codes stay
+reserved.
 
 **Advisory by default; gating is the user's call.** `semantic` is never part of `check`,
 `make verify`, or dogfood, so the deterministic gate stays offline and reproducible. A team
@@ -700,7 +702,7 @@ the added context).
 
 Cache key: `(function_content_hash, prompt_version, model_id)`.
 
-**Module-level** (`SEM002`, weak module docstring — **decided, build pending ADR-013**) evaluates a module docstring against the module's public symbols. Input is the docstring + the list of public top-level defs/classes — **not** project context; the spike showed symbols alone reach 0% false positives, so `context_files` is *not* required for these dimensions (it stays reserved for a future dimension that needs sibling context). Rubric dimensions, each judged independently:
+**Module-level** (`SEM002`, weak module docstring — **shipped, ADR-013**; opt in with `scan_modes`/`--scan-modes module`) evaluates a module docstring against the module's public symbols. Input is the docstring + the list of public top-level defs/classes — **not** project context; the spike showed symbols alone reach 0% false positives, so `context_files` is *not* required for these dimensions (it stays reserved for a future dimension that needs sibling context). Rubric dimensions, each judged independently:
 
 | Dimension | Question |
 |---|---|
@@ -1002,12 +1004,14 @@ min_tier = 3
 # — the lowest-noise signal for a team that opts SEM into a gate.
 finding_threshold = "weak"
 
-# (designed, not yet built) Project-level context files for module-level scan,
-# relative to the project root; directories pull in *.md files recursively.
-# context_files = ["README.md", "CLAUDE.md", "docs/"]
+# Scan modes: "function" (SEM001, default) and/or "module" (SEM002; ADR-013).
+# Module scan is MODEL-SENSITIVE — reliable only on a gpt-4o-class model (weak
+# models hit 43-71% false positives). Leave it off without a capable model.
+scan_modes = ["function"]
 
-# (designed, not yet built) Scan modes to run: "function" | "module" | both.
-# scan_modes = ["function"]
+# (designed, not yet built) Project-level context files. SEM002 does NOT need them
+# (the module's own symbols suffice — ADR-013); reserved for a future dimension.
+# context_files = ["README.md", "CLAUDE.md", "docs/"]
 
 # Cross-file analysis via an LSP server (ADR-009; docpact[crossfile]).
 # Used only by `docpact check --crossfile` (opt-in). Provider-agnostic:
@@ -1044,7 +1048,7 @@ Bare suppression without codes emits `FIX001`. Suppression with codes but withou
 | `PARSE` | Parse-time error rules (file cannot be parsed at all) | post-v0.3 |
 | `REG` | Tool-registry consistency rules (same-file `ToolDefinition`/dict/call-based registries; cross-file `REG010`/`REG011` via `--crossfile`) | post-v0.3 (ADR-005; call-based ADR-011; cross-file ADR-009/010) |
 | `HEUR` | Heuristic rules | v0.2 (namespace allocated v0.1; no rules yet) |
-| `SEM` | Semantic (LLM-judged) findings; advisory, via `docpact semantic` | post-v0.3 (ADR-008); SEM001 ships |
+| `SEM` | Semantic (LLM-judged) findings; advisory, via `docpact semantic` | post-v0.3 (ADR-008); SEM001 + SEM002 module scan (ADR-013) |
 
 `PARSE` rules fire before any structural or function-level checks. If a `PARSE` rule fires for a file, all other checks for that file are skipped — structural analysis requires a valid AST. By default the `PARSE` namespace is selected (same as `DOC`, `MCP`); add `PARSE001` to `[tool.docpact.per-file-ignores]` to silence it for generated or vendored files.
 
@@ -1102,6 +1106,8 @@ Shipped:
 
 ```
   --min-tier {1,2,3,4}            Scope to this tier and above. Overrides config (default 3).
+  --scan-modes {function,module}  Scan modes to run (repeatable). Overrides config (default function).
+                                  module = SEM002; gpt-4o-class model only (ADR-013).
   --changed-only REF              Restrict to .py files changed relative to REF.
   --crossfile                     Resolve imported handlers/models via the LSP server (ADR-010).
   --format {text,json}            Output format. Default: text.
@@ -1112,9 +1118,8 @@ Shipped:
 Designed, not yet built:
 
 ```
-  --scan-modes {function,module}  Scan modes to run. Overrides config. Default: ["function"].
   --sample-rate FLOAT             Fraction of eligible units to analyse (0.0–1.0). For cost control.
-  --select / --ignore CODES       SEM rule codes or prefixes (only SEM001 exists today).
+  --select / --ignore CODES       SEM rule codes or prefixes.
 ```
 
 ### `generate`

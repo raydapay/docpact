@@ -13,7 +13,7 @@ Copy this file to those names if needed; treat them as equivalent.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
-DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001.
+DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001–SEM002.
 DOC051 (Annotated constraint duplication) and DOC098 (doctest) are reserved/deferred.
 REG and SEM are opt-in (add `REG`/`SEM` to `select`); SEM001 is advisory via `docpact semantic`.
 REG011 and REG010's imported-model leg are cross-file (`--crossfile`); REG010's same-file leg
@@ -68,9 +68,15 @@ Key facts a fresh session needs:
   to a file; default is discard. The server subprocess otherwise routes stderr to `DEVNULL`.
 - SEM is advisory by default and **never in `check`/`make verify`/dogfood**; gating is the
   user's call (non-zero exit on findings + `[tool.docpact.semantic] finding_threshold`
-  (`"weak"` default | `"empty"`) + per-rule `SEM001` severity). `docpact semantic
-  --changed-only REF` scopes to a git diff. Verdict vocab is `good/weak/empty`. Module-level
-  scan, `--sample-rate`, `any-llm` backend, and caching are designed-not-built.
+  (`"weak"` default | `"empty"`) + per-rule `SEM001`/`SEM002` severity). `docpact semantic
+  --changed-only REF` scopes to a git diff. SEM001 verdict vocab is `good/weak/empty`.
+- SEM002 (weak module docstring; ADR-013) is opt-in via `scan_modes`/`--scan-modes module`
+  (default function-only). Rubric: scope (consistency, **never** completeness — never flag for
+  omitting symbols) + orientation (contentful, not boilerplate). Input = docstring + public
+  symbols (no `context_files`). **MODEL-SENSITIVE: gpt-4o-class only** (gpt-4o-mini = 43–71% FP);
+  stated loudly in README/spec/rule doc. `model/module_info.py` + `extract_module_info` +
+  `analyze_modules`. `SemanticReport.units_reviewed` (was `functions_reviewed`). `--sample-rate`,
+  `any-llm`, caching, `context_files` remain designed-not-built.
 
 **The project owner is Ray.** Address him directly when asking questions. Ray's
 working preferences are documented below under "Working with Ray."

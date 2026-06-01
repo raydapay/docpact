@@ -10,7 +10,7 @@ ships; do not put status in CLAUDE.md.
 **v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
-DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001.
+DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001–SEM002.
 DOC051 (Annotated constraint dup) and DOC098 (doctest) reserved/deferred; REG003/REG050/DOC020 reserved.
 REG and SEM are opt-in; SEM001 is advisory via `docpact semantic` (ADR-008). REG011 and the
 imported-model leg of REG010 are cross-file (`docpact check --crossfile`, ADR-009/010); REG010's
@@ -192,6 +192,30 @@ features shipped.
 ---
 
 ## Recent changes (post-v0.3)
+
+### SEM002 — module-level semantic scan (ADR-013) — SHIPPED (2026-06-01)
+
+The module-docstring meaning gap (DOC002 ensures presence; nothing judged usefulness).
+Spiked before building, per ADR-008's discipline — and the spike first argued *against*
+building: `gpt-4o-mini` + a first-draft prompt scored 71%/43% FP because it demanded the
+docstring enumerate every symbol. Two confounds removed (capable model + a
+consistency-not-completeness prompt) flipped it to **0/12 FP on `gpt-4o`, stable across two
+runs, full recall**. The reversal is recorded in ADR-013 as the evidence.
+
+- **`SEM002`** — weak module docstring: scope (purpose consistent with public symbols, never
+  completeness) + orientation (contentful, not boilerplate). New code, not a SEM001 flavour.
+- **Input = docstring + public symbols**; **no `context_files`** (symbols suffice — the spike's
+  cheapest sufficient variant).
+- **`scan_modes`** config + **`--scan-modes`** flag (`function` default; add `module`). Module
+  scan off by default.
+- **Model-sensitivity is loud, not a footnote** (ADR-013): README ⚠️ callout, rule docstring,
+  spec §12.2, and the `--scan-modes`/`scan_modes` help all say gpt-4o-class only.
+- `finding_threshold` governs SEM001's weak/empty; SEM002 surfaces a finding per weak dimension
+  at the SEM002 severity (modules have no `empty` verdict).
+- New: `model/module_info.py`, `parser.source.extract_module_info`, analyzer
+  `MODULE_SYSTEM`/`analyze_modules`. `SemanticReport.functions_reviewed` → `units_reviewed`.
+- Owed (ADR-013 revisit trigger 1): real-adopter-tree validation; the spike used docpact's own
+  (good) docstrings + synthetic planted cases.
 
 ### SEM `finding_threshold` + `--changed-only`; advisory/gating posture (2026-05-31)
 

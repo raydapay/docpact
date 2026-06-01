@@ -23,6 +23,7 @@ import re
 from typing import TYPE_CHECKING
 
 from docpact.model.function_info import DecoratorInfo, FunctionInfo, ParameterInfo
+from docpact.model.module_info import ModuleInfo
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -137,6 +138,45 @@ def extract_functions(source_path: Path) -> list[FunctionInfo]:
     visitor = _FunctionVisitor(source_path, source_bytes, line_offsets)
     visitor.visit(tree)
     return visitor.functions
+
+
+def extract_module_info(source_path: Path) -> ModuleInfo | None:
+    """Extract a module's docstring and public top-level symbols (SEM002; ADR-013).
+
+    Args:
+        source_path: Path to a .py file.
+
+    Returns:
+        A ModuleInfo when the module has a docstring — the unit SEM002 reviews —
+        or None when it has none (module-docstring *presence* is DOC002's
+        concern, not SEM002's). ``symbols`` are ``name — first-docstring-line``
+        for each public (non-underscore) top-level function/class, in source
+        order; a symbol without its own docstring shows ``(no docstring)``.
+
+    Raises:
+        SyntaxError: source_path contains invalid Python.
+        OSError: source_path cannot be read.
+
+    Constraints:
+        Single file; does not follow imports or evaluate code.
+
+    Stability: beta
+    """
+    source_text = source_path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    tree = ast.parse(source_text, filename=str(source_path))
+    doc = ast.get_docstring(tree, clean=False)
+    if doc is None:
+        return None
+    symbols: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if node.name.startswith("_"):
+            continue
+        inner = (ast.get_docstring(node) or "").strip()
+        summary = inner.splitlines()[0] if inner else "(no docstring)"
+        symbols.append(f"{node.name} — {summary}")
+    return ModuleInfo(file_path=source_path, docstring_raw=doc, symbols=tuple(symbols))
 
 
 def _extract_docstring_raw(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:

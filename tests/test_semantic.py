@@ -18,6 +18,7 @@ from click.testing import CliRunner
 from docpact.cli import main
 from docpact.config import SemanticConfig, load_config
 from docpact.model.function_info import FunctionInfo, ParameterInfo
+from docpact.model.module_info import ModuleInfo
 from docpact.semantic import analyzer, backend
 
 # --- helpers ------------------------------------------------------------------
@@ -107,6 +108,30 @@ def test_semantic_finding_threshold_validated(tmp_path: Path) -> None:
         '[tool.docpact.semantic]\nfinding_threshold = "loud"\n'
     )
     with pytest.raises(Exception, match="finding_threshold"):
+        load_config(tmp_path)
+
+
+def test_semantic_scan_modes_default_function(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC"]\n')
+    assert load_config(tmp_path).config.semantic.scan_modes == ("function",)
+
+
+def test_semantic_scan_modes_parsed(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.docpact.semantic]\nscan_modes = ["function", "module"]\n'
+    )
+    assert load_config(tmp_path).config.semantic.scan_modes == ("function", "module")
+
+
+def test_semantic_scan_modes_rejects_unknown(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact.semantic]\nscan_modes = ["galaxy"]\n')
+    with pytest.raises(Exception, match="scan_modes"):
+        load_config(tmp_path)
+
+
+def test_semantic_scan_modes_rejects_empty(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[tool.docpact.semantic]\nscan_modes = []\n")
+    with pytest.raises(Exception, match="scan_modes"):
         load_config(tmp_path)
 
 
@@ -214,7 +239,7 @@ def test_analyze_maps_verdicts() -> None:
         }
     )
     report = analyzer.analyze(funcs, _FakeBackend(reply))
-    assert report.functions_reviewed == 3
+    assert report.units_reviewed == 3
     assert report.requests == 1
     codes = [(r.code, r.location.line) for r in report.results]
     assert codes == [("SEM001", 10), ("SEM001", 30)]  # good skipped, sorted by line
@@ -245,6 +270,81 @@ def test_threshold_empty_drops_weak() -> None:
     report = analyzer.analyze(funcs, _FakeBackend(_verdicts_reply()), threshold="empty")
     assert [r.location.line for r in report.results] == [10]  # only empty surfaces
     assert all(r.message.startswith("empty:") for r in report.results)
+
+
+def _mod(label: str, *, doc: str = "Does a thing.", symbols: tuple[str, ...] = ()) -> ModuleInfo:
+    """Build a ModuleInfo whose file_path str is `label` (the prompt/reply key)."""
+    return ModuleInfo(file_path=Path(label), docstring_raw=doc, symbols=symbols)
+
+
+def test_analyze_modules_maps_weak_dimensions() -> None:
+    mods = [_mod("a.py"), _mod("b.py"), _mod("c.py")]
+    reply = json.dumps(
+        {
+            "findings": [
+                {
+                    "name": "a.py",
+                    "scope": "weak",
+                    "scope_evidence": "claims HTTP",
+                    "orientation": "good",
+                    "orientation_evidence": "",
+                },
+                {
+                    "name": "b.py",
+                    "scope": "good",
+                    "scope_evidence": "",
+                    "orientation": "weak",
+                    "orientation_evidence": "boilerplate",
+                },
+                {
+                    "name": "c.py",
+                    "scope": "good",
+                    "scope_evidence": "",
+                    "orientation": "good",
+                    "orientation_evidence": "",
+                },
+            ]
+        }
+    )
+    report = analyzer.analyze_modules(mods, _FakeBackend(reply))
+    assert report.units_reviewed == 3
+    codes = [(r.code, str(r.location.file_path)) for r in report.results]
+    assert codes == [("SEM002", "a.py"), ("SEM002", "b.py")]  # c.py good → no finding
+    assert "scope: claims HTTP" in report.results[0].message
+    assert "orientation: boilerplate" in report.results[1].message
+    assert report.results[0].location.line == 1
+
+
+def test_analyze_modules_both_dimensions_one_finding() -> None:
+    reply = json.dumps(
+        {
+            "findings": [
+                {
+                    "name": "m.py",
+                    "scope": "weak",
+                    "scope_evidence": "wrong domain",
+                    "orientation": "weak",
+                    "orientation_evidence": "empty",
+                }
+            ]
+        }
+    )
+    report = analyzer.analyze_modules([_mod("m.py")], _FakeBackend(reply))
+    assert len(report.results) == 1
+    assert "scope: wrong domain" in report.results[0].message
+    assert "orientation: empty" in report.results[0].message
+
+
+def test_analyze_modules_unknown_label_skipped() -> None:
+    reply = json.dumps({"findings": [{"name": "ghost.py", "scope": "weak", "scope_evidence": "x"}]})
+    report = analyzer.analyze_modules([_mod("real.py")], _FakeBackend(reply))
+    assert report.results == []
+
+
+def test_analyze_modules_unparseable_skipped() -> None:
+    report = analyzer.analyze_modules([_mod("m.py")], _FakeBackend("not json"))
+    assert report.results == []
+    assert report.requests == 1
 
 
 def test_analyze_unparseable_reply_skipped() -> None:
@@ -307,7 +407,69 @@ def test_semantic_no_functions_in_scope() -> None:
         )
         result = runner.invoke(main, ["semantic", "m.py"])  # default min-tier 3; _helper is tier 1
     assert result.exit_code == 0
-    assert "No functions in scope" in result.output
+    assert "Nothing in scope" in result.output
+
+
+class _ModuleEchoBackend:
+    """Backend that flags scope=weak for each module label found in the prompt.
+
+    Reads the `module: <label>` lines from the user prompt so the reply's `name`
+    matches whatever path the CLI used — robust to relative/absolute path forms.
+    """
+
+    def complete(self, system: str, user: str) -> str:
+        labels = [ln[len("module: ") :] for ln in user.splitlines() if ln.startswith("module: ")]
+        return json.dumps(
+            {
+                "findings": [
+                    {
+                        "name": label,
+                        "scope": "weak",
+                        "scope_evidence": "claims X",
+                        "orientation": "good",
+                        "orientation_evidence": "",
+                    }
+                    for label in labels
+                ]
+            }
+        )
+
+
+def test_semantic_module_dry_run() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        Path(td, "m.py").write_text(
+            '"""A module that does things."""\n\n\ndef pub():\n    """Go."""\n'
+        )
+        result = runner.invoke(main, ["semantic", "m.py", "--scan-modes", "module", "--dry-run"])
+    assert result.exit_code == 0
+    assert "SYSTEM (module)" in result.output
+    assert "public symbols" in result.output
+    assert "no API call" in result.output
+
+
+def test_semantic_module_run_with_fake_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("docpact.cli.make_backend", lambda cfg: _ModuleEchoBackend())
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        Path(td, "m.py").write_text('"""A module."""\n\n\ndef pub():\n    """Go."""\n')
+        result = runner.invoke(
+            main, ["semantic", "m.py", "--scan-modes", "module"], catch_exceptions=False
+        )
+    assert result.exit_code == 1  # advisory finding → non-zero
+    assert "SEM002" in result.output
+    assert "module(s)" in result.output
+
+
+def test_semantic_module_scan_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Default scan_modes is function-only; a module-only weak signal must not fire.
+    monkeypatch.setattr("docpact.cli.make_backend", lambda cfg: _ModuleEchoBackend())
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        # No tier-3 functions, so the function scan finds nothing in scope.
+        Path(td, "m.py").write_text('"""A module."""\n\n\ndef _p():\n    """x."""\n')
+        result = runner.invoke(main, ["semantic", "m.py"], catch_exceptions=False)
+    assert "SEM002" not in result.output
 
 
 def test_semantic_changed_only_restricts_scope() -> None:
