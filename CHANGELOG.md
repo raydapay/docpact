@@ -1,6 +1,13 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a12] — 2026-06-01
+
+### Added
+- **sem:** Add finding_threshold and --changed-only; advisory/gating posture
+- **sem:** Add SEM002 module-level semantic scan (ADR-013)
+
+
 ## [0.1.0a11] — 2026-05-31
 
 ### Added
