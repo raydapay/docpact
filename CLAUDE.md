@@ -10,7 +10,8 @@ Copy this file to those names if needed; treat them as equivalent.
 
 ## Current state
 
-**v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
+**Spec cycles 0.1–0.3 complete; codebase is self-hosting.** (Spec cycles are
+development milestones — *not* release versions; see **Versioning** below.)
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
 DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001–SEM002.
@@ -19,7 +20,14 @@ REG and SEM are opt-in (add `REG`/`SEM` to `select`); SEM001 is advisory via `do
 REG011 and REG010's imported-model leg are cross-file (`--crossfile`); REG010's same-file leg
 runs offline in the default `check`. See PROGRESS.md for details.
 
-No active milestone. See PROGRESS.md for v0.3 scope and what shipped.
+No active milestone. See PROGRESS.md for what shipped per cycle.
+
+**Versioning.** Spec cycles (0.1, 0.2, 0.3) track which slice of the spec is built
+and are independent of release versioning. Releases follow a pre-1.0 alpha line
+(`0.1.0aN`); docpact stays alpha — usable, but rule codes, config keys, and the
+spec may still change on adopter feedback — and is git-installed, not yet on PyPI.
+Do not read a spec cycle as a release tag: "cycle 0.3 complete" and `version =
+"0.1.0aN"` are two independent counters.
 
 Key facts a fresh session needs:
 - Suppression syntax is `# nodo: CODE -- reason` (not `# noqa`). See ADR-004.
@@ -70,6 +78,14 @@ Key facts a fresh session needs:
   user's call (non-zero exit on findings + `[tool.docpact.semantic] finding_threshold`
   (`"weak"` default | `"empty"`) + per-rule `SEM001`/`SEM002` severity). `docpact semantic
   --changed-only REF` scopes to a git diff. SEM001 verdict vocab is `good/weak/empty`.
+- SEM codes guarantee stable *intent*, not stable *behavior* — §18.1's stable-behavior
+  promise does **not** apply to them (ADR-015). Behavior tracks the (model, prompt) pair: model
+  unpinnable, prompt pinned in source. Every `semantic` run surfaces `model=<id>` + a prompt
+  fingerprint (`builtin:<hash>`) in text *and* JSON (`meta.semantic` — additive key via
+  `format_json(..., meta=)`; `check` output unchanged). `analyzer.prompt_fingerprint()` is the
+  content hash. Rubric-only prompt override is designed-not-built: docpact keeps the
+  output-contract scaffolding, does **no** prompt sanitizing, and a whole-prompt override would
+  silently zero findings — hence rubric-only.
 - SEM002 (weak module docstring; ADR-013) is opt-in via `scan_modes`/`--scan-modes module`
   (default function-only). Rubric: scope (consistency, **never** completeness — never flag for
   omitting symbols) + orientation (contentful, not boilerplate). Input = docstring + public
@@ -86,7 +102,7 @@ working preferences are documented below under "Working with Ray."
 ## Before you start
 
 **Always read first (< 5 min total):**
-1. `docs/PROGRESS.md` — current milestone, recent post-v0.1 changes, v0.2 scope.
+1. `docs/PROGRESS.md` — what shipped per spec cycle and recent changes.
 2. `pyproject.toml` — dependencies, tooling config, docpact self-config.
 
 **Read additionally based on task type:**

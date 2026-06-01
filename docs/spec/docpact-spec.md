@@ -1,7 +1,7 @@
 # docpact — Specification
 
 **Version:** 0.4.5  
-**Status:** Active — v0.1–v0.3 complete; post-v0.3: SEM (ADR-008) SEM001 + SEM002 module scan (ADR-013) + `finding_threshold`/`--changed-only`/`scan_modes`, REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped  
+**Status:** Active — spec cycles 0.1–0.3 complete (development milestones, independent of release version — see README "Status & versioning"); post-cycle-0.3: SEM (ADR-008) SEM001 + SEM002 module scan (ADR-013) + `finding_threshold`/`--changed-only`/`scan_modes`, REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped  
 **Last revised:** 2026-06-01
 
 ---
@@ -725,11 +725,12 @@ LLM I/O is abstracted behind an internal `SemanticBackend` protocol (see §7.6).
 | Risk | Mitigation |
 |---|---|
 | Non-determinism across runs | Categorical verdicts (`good`/`weak`/`missing`), not floats; `temperature=0` |
-| Prompt-version fragility | Cache key includes `prompt_version`; changing the prompt invalidates prior entries |
+| Behavior shifts silently under a "stable" code | SEM codes guarantee stable *intent*, not stable *behavior* (§18.1 carve-out, ADR-015); each run surfaces its model id + prompt fingerprint so a behavior change is visible, not silent |
+| Prompt-version fragility | Prompt fingerprint (`builtin:<hash>`, content hash of the system prompt) surfaced in run provenance; a designed cache key includes it so changing the prompt invalidates prior entries |
 | Cost at scale | Content-hash caching; `--changed-only`; `--sample-rate` |
-| Reduced trust in LLM-as-judge | Warning severity by default; findings are advisory until opted into error |
+| Reduced trust in LLM-as-judge | Warning severity by default; findings are advisory until opted into error. Users may override the rubric prose (designed, not built; rubric-only — docpact owns the output-contract scaffolding, does no prompt sanitizing, and a custom whole-prompt would silently zero findings — ADR-015) |
 
-**Unresolved:** suppression of SEM findings across prompt-version changes (snapshot-baseline approach is a candidate but not finalised). Prompt versioning scheme TBD.
+**Unresolved:** suppression of SEM findings across prompt-version changes (snapshot-baseline approach is a candidate but not finalised). The prompt-version identity is the content-hash fingerprint (ADR-015); the suppression/baseline scheme built on it is still TBD.
 
 When semantic mode ships, it ships off by default. `docpact check` is never affected. The rule engine architecture, namespace allocation, and severity model already account for `SEM` rules.
 
@@ -1243,6 +1244,8 @@ Error codes are a stable API.
 - New codes are appended; existing codes are not renumbered.
 
 This matches ruff's policy. It exists because teams write `# noqa: DOC007` suppressions, CI rules, and grep patterns against these codes. A tool that renumbers codes between releases cannot be used in serious pipelines.
+
+**Carve-out for non-deterministic (SEM) codes.** For the deterministic rules, "a code never changes its meaning" means **stable behavior on stable input**: the code names a contract, the analyzer is a pure function of the AST, and a test pins the output. SEM codes (SEM001, SEM002) cannot offer that. Their mechanism is an LLM prompt plus a model, so they guarantee stable *intent* — what the rule detects and its diagnostic vocabulary — not stable *behavior*. Behavior tracks the **(model, prompt)** pair: the model is an external target we do not control, and the prompt is docpact source that may be revised (a prompt fix is a reviewable code change, not silent drift). To keep findings traceable, every `docpact semantic` run surfaces its model id and a prompt fingerprint (`builtin:<hash>`, becoming `custom:<hash>` if a user overrides the rubric) in both text and JSON (`meta.semantic`) output. The naming, retirement, and never-reuse rules above still apply to SEM codes; only the stable-*behavior* promise does not. See ADR-015 and the §12.2 reliability table.
 
 ### 18.2 Schema versioning
 

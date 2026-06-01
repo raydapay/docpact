@@ -38,6 +38,20 @@ uv add git+https://github.com/raydapay/docpact.git
 uv add "docpact[crossfile] @ git+https://github.com/raydapay/docpact.git"
 ```
 
+## Status & versioning
+
+docpact is **alpha**: usable and self-hosting, but pre-1.0 — rule codes, config
+keys, and the spec may still change in response to adopter feedback. It is
+installed from git and is not yet published to PyPI.
+
+Two independent counters appear in the docs; don't conflate them:
+
+- **Release version** (`0.1.0aN`) — the actual package version, a pre-1.0 alpha
+  line. This is the only number that means "a release."
+- **Spec cycles** (`0.1`, `0.2`, `0.3`) — *development milestones* tracking which
+  slice of the [specification](docs/spec/docpact-spec.md) is built. "Spec cycle
+  0.3 complete" describes scope delivered, not a release.
+
 ## Usage
 
 ```bash
@@ -83,6 +97,15 @@ unless `--exit-zero`) and tunes noise with `finding_threshold` + the `SEM001`
 severity. docpact takes no stance on whether you should — advisory by default,
 configurable if you want more. See
 [ADR-008](docs/adr/ADR-008-open-semantic-layer.md).
+
+**Stable intent, not stable behavior.** Unlike the deterministic codes, a SEM
+code's behavior tracks the model and the prompt, neither fully pinned by the code
+(the model is an external target; the prompt is docpact source we may revise).
+SEM therefore guarantees *what it looks for*, not byte-identical findings across
+model or prompt changes. So every run records its provenance — `model=<id>` and a
+prompt fingerprint (`builtin:<hash>`) in both the text summary and JSON
+(`meta.semantic`) — and you can pin behavior in CI by pinning the model. See
+[ADR-015](docs/adr/ADR-015-sem-stable-intent-not-behavior.md).
 
 > ### ⚠️ Module-level scan is model-sensitive — do not run it on a weak model
 >
@@ -429,7 +452,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 1059 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 1069 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 
@@ -440,7 +463,7 @@ Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050,
 | [Specification](docs/spec/docpact-spec.md) | Full design specification. Source of truth for what docpact is and why. |
 | [Rule docs](docs/rules/) | One page per rule: what it checks, examples, configuration. |
 | [ADR index](docs/adr/README.md) | Architecture decision records. Why each significant choice was made. |
-| [Progress](docs/PROGRESS.md) | Milestone log and v0.2 scope. |
+| [Progress](docs/PROGRESS.md) | Spec-cycle milestone log and per-phase status. |
 
 ## License
 

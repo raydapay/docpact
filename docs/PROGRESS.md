@@ -3,11 +3,16 @@
 Tracks phase completion and per-module status. Update this file when a phase
 ships; do not put status in CLAUDE.md.
 
+The `0.1`/`0.2`/`0.3` labels here are **spec cycles** — development milestones
+tracking which part of the spec is built. They are *not* release versions:
+releases follow an independent pre-1.0 alpha line (`0.1.0aN`). See CLAUDE.md
+"Versioning".
+
 ---
 
 ## Current status
 
-**v0.1 complete. v0.2 complete. v0.3 complete. Codebase is self-hosting.**
+**Spec cycles 0.1–0.3 complete (development milestones, not releases). Codebase is self-hosting.**
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052,
 DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001–SEM002.
@@ -192,6 +197,32 @@ features shipped.
 ---
 
 ## Recent changes (post-v0.3)
+
+### Peer-review follow-ups: SEM stability carve-out, real-ty smoke, fence fix (2026-06-01)
+
+Acting on a peer review of the post-cycle-0.3 state:
+
+- **SEM stability carve-out (ADR-015).** §18.1's "a code never changes meaning" means *stable
+  behavior on stable input* for deterministic rules; SEM codes can't offer that (LLM + model).
+  Carved out explicitly: SEM guarantees stable **intent**, not **behavior**. Behavior tracks the
+  (model, prompt) pair — model unpinnable, prompt pinned in source. Each `semantic` run now
+  surfaces `model=<id>` + a prompt fingerprint (`builtin:<hash>`) in text and JSON
+  (`meta.semantic`, an additive `format_json(meta=)` key — `check` output unchanged).
+  `analyzer.prompt_fingerprint()` is the content hash. **Rubric-only** prompt override is the
+  *designed-not-built* mechanism: docpact keeps the output-contract scaffolding and does no
+  prompt sanitizing, so a whole-prompt override (rejected) would silently zero findings. Spec
+  §18.1 + §12.2 updated.
+- **Real-ty smoke test (non-gating).** CI exercises the cross-file pass only against the fake LSP
+  server; a ty release could break resolution silently. Added a `@pytest.mark.realty` test
+  driving a real ty (excluded from the default run via `-m "not realty"`) and
+  `.github/workflows/crossfile-smoke.yml` — scheduled weekly + manual, installs the *latest* ty,
+  never gates a merge (red in the Actions tab is the alert).
+- **`_extract_json` fence fix.** `lstrip("json")` stripped the character set `{j,o,s,n}`, not the
+  literal token → `.removeprefix("json")`. Latent (the brace-finding fallback masked it), not a
+  live bug; fixed for correctness + a direct fence-contract unit test.
+- **cli.py accretion (ADR-014).** Recorded `cli.py` (~1600 lines) as the watched accretion point;
+  `CheckEngine` extraction deferred to the next change touching the REG010/cross-file seam (or
+  `cli.py` > ~2000 lines) rather than a speculative refactor now.
 
 ### SEM002 — module-level semantic scan (ADR-013) — SHIPPED (2026-06-01)
 
