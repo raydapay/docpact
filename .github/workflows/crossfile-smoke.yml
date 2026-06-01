@@ -1,0 +1,37 @@
+name: Cross-file smoke (real ty)
+
+# Non-gating. Runs the `realty`-marked cross-file tests against the *latest* ty
+# release on a schedule, so a ty release that changes its LSP responses surfaces
+# here before an adopter hits it. The default CI run uses the fake LSP server and
+# cannot catch this by construction. This workflow never blocks a merge — it only
+# goes red in the Actions tab, which is the alert.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  realty:
+    name: Cross-file resolution against real ty
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Upgrade ty to the latest release
+        run: uv pip install --upgrade ty
+
+      - name: Report resolved ty version
+        run: uv run ty --version
+
+      - name: Run cross-file smoke tests
+        run: uv run pytest tests/test_crossfile.py -m realty -v

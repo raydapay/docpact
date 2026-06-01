@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = "MIT"
 keywords = ["docstring", "lint", "mcp", "fastmcp", "contracts", "ci"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -99,6 +99,13 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "-ra",
+    # `realty` drives a real ty process (live LSP round-trip). Excluded from the
+    # default/CI run, which uses the fake server; the scheduled cross-file smoke
+    # workflow opts in with `-m realty`.
+    "-m", "not realty",
+]
+markers = [
+    "realty: cross-file test driving a real ty language server (scheduled smoke only)",
 ]
 
 [tool.coverage.run]

@@ -1,24 +1,28 @@
 """Tests for the opt-in cross-file pass (REG010; ADR-009).
 
-No real language server: resolution is driven against the fake server
-subprocess (``tests/fixtures/fake_lsp_server.py``), pointed at real fixture
-files written under tmp_path. The pure comparison (parity_findings), model
-field extraction, and URI handling are unit-tested directly; the resolver and
-the ``check --crossfile`` CLI path are tested end-to-end through the fake.
+No real language server (by default): resolution is driven against the fake
+server subprocess (``tests/fixtures/fake_lsp_server.py``), pointed at real
+fixture files written under tmp_path. The pure comparison (parity_findings),
+model field extraction, and URI handling are unit-tested directly; the resolver
+and the ``check --crossfile`` CLI path are tested end-to-end through the fake.
+
+One ``@pytest.mark.realty`` test drives the resolver against a *real* ty
+process — excluded from the default run (``-m "not realty"``) and exercised
+only by the scheduled cross-file smoke workflow, which is the sole guard that
+catches a ty release changing its LSP responses. The fake cannot catch that by
+construction.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import json
+import shutil
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+import pytest
 from click.testing import CliRunner
-
-if TYPE_CHECKING:
-    import pytest
 
 from docpact.cli import main
 from docpact.config import Config, LspConfig
@@ -188,6 +192,25 @@ def test_resolver_reports_drift(tmp_path: Path) -> None:
     # Doc documents only 'query'; the model also has 'limit'.
     tools, schemas = _workspace(tmp_path, "Search.\n\nArgs:\n    query: q\n")
     config = _config(tmp_path, "location", schemas.as_uri())
+    results = resolve_crossfile([tools], config, tmp_path).findings
+    assert len(results) == 1
+    assert results[0].code == "REG010"
+    assert "limit" in results[0].message
+
+
+@pytest.mark.realty
+@pytest.mark.skipif(shutil.which("ty") is None, reason="real ty not installed")
+def test_resolver_reports_drift_against_real_ty(tmp_path: Path) -> None:
+    """Same drift as ``test_resolver_reports_drift``, but a real ty resolves it.
+
+    The default-config server is ``("ty", "server")`` — no fake injected — so
+    this exercises the live LSP definition round-trip end to end. Excluded from
+    the default run; the scheduled smoke workflow is its only caller. If a ty
+    release changes its ``textDocument/definition`` response shape, this is the
+    test that goes red.
+    """
+    tools, _ = _workspace(tmp_path, "Search.\n\nArgs:\n    query: q\n")
+    config = dataclasses.replace(Config(), select=("REG",))  # default LspConfig → real ty
     results = resolve_crossfile([tools], config, tmp_path).findings
     assert len(results) == 1
     assert results[0].code == "REG010"
