@@ -237,7 +237,7 @@ Two cheap SEM enablers shipped, plus a spec-honesty pass.
   `any-llm` as if shipped; now each is marked shipped vs designed-not-built, and the verdict
   vocab reconciled to the real `good/weak/empty` (was `missing/weak`).
 
-Module-level scan: spike pending (see below) before any build.
+Module-level scan: shipped as SEM002 (ADR-013) — see the SEM002 entry above.
 
 ### SEM001 prompt hardening — adopter issue #11 (2026-05-31)
 

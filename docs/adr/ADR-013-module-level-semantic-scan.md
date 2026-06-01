@@ -181,8 +181,9 @@ orientation-only). Dropping one loses real signal for no FP reduction.
   (`[tool.docpact.rules] SEM002`). It surfaces a finding per weak rubric dimension;
   `finding_threshold` governs SEM001's `weak`/`empty` vocabulary specifically and
   does not gate SEM002 (modules have no `empty` verdict).
-- The throwaway spike (`scripts/spike_semantic_module.py`) is removed once SEM002 ships,
-  as `scripts/spike_semantic.py` was after SEM001.
+- The throwaway spike (`scripts/spike_semantic_module.py`) was removed once SEM002
+  shipped, as `scripts/spike_semantic.py` was after SEM001; its results are recorded
+  above and in PROGRESS.md.
 
 ## Revisit triggers
 
@@ -203,6 +204,6 @@ orientation-only). Dropping one loses real signal for no FP reduction.
 ## References
 
 1. ADR-008 — opened the SEM layer; listed module-level scan as designed-not-built
-2. `scripts/spike_semantic_module.py` — the spike (gpt-4o-mini 71%/43% FP → gpt-4o 0% FP, hardened prompt, stable across two runs)
+2. `scripts/spike_semantic_module.py` — the spike (gpt-4o-mini 71%/43% FP → gpt-4o 0% FP, hardened prompt, stable across two runs); since removed once SEM002 shipped
 3. Spec §12.2 (semantic design, two scan modes), §15.1 (`scan_modes`, `context_files`), §18.1 (stable error codes)
 4. SEM001 prompt-hardening (adopter issue #11; PROGRESS.md) — the precedent: read the section in full, consistency over pedantry
