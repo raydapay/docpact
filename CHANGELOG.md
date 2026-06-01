@@ -1,6 +1,13 @@
 # Changelog
 
 Generated from conventional commits. Only `feat:` and `fix:` entries appear.
+## [0.1.0a13] — 2026-06-01
+
+### Added
+- **sem:** Support Gemini via OpenAI-compatible backend
+- **sem:** Surface run provenance; carve out SEM stability
+
+
 ## [0.1.0a12] — 2026-06-01
 
 ### Added
