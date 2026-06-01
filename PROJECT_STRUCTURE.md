@@ -102,12 +102,12 @@ Rule tests are organized one file per rule, mirroring the implementation layout.
 - Positive cases (rule fires when it should)
 - Negative cases (rule does not fire when it should not)
 - Fix behavior (safe and unsafe, if applicable)
-- Suppression behavior (`# noqa: <code>` works)
+- Suppression behavior (`# nodo: <code> -- reason` works)
 
-## What is NOT in v0.1
+## What is reserved or not yet built
 
-Reserved namespaces (`heur/`, `ty/`, `sem/`) exist in the directory structure but contain no rules. Their `__init__.py` files document the reservation. This makes the v0.2+ expansion path visible without committing implementation.
+The `heur/` namespace exists in the directory structure but contains no rules; its `__init__.py` documents the reservation, keeping the expansion path visible without committing implementation. (The `ty/` and `sem/` namespaces, once reserved here too, now ship rules — TY001–TY002 and SEM001–SEM002.)
 
-The `pytest` extra (`pip install docpact[pytest]`) is declared in `pyproject.toml` but the plugin itself is not implemented in v0.1. The programmatic testing API (`docpact.testing`) covers v0.1's testing needs; the plugin in v0.2 will be a layer on top.
+The `pytest` extra (`pip install docpact[pytest]`) is declared in `pyproject.toml` but the plugin itself is not implemented yet (v0.2 target). The programmatic testing API (`docpact.testing`) covers current testing needs; the plugin will be a layer on top.
 
-The semantic mode subsystem is entirely absent from the v0.1 codebase. The `SEM` namespace exists in the rule code prefix convention but no semantic analyzer code, prompt files, or LLM client integration is present. This is per ADR-001 and spec §5.3.
+The semantic mode subsystem is present: `semantic/analyzer.py` plus the `model/module_info.py` extractor back the opt-in, advisory `docpact semantic` command (SEM001 function scan; SEM002 module scan). It is **never** part of `docpact check`, which stays deterministic and offline. See ADR-008, ADR-013, and ADR-015. Still designed-not-built within semantic mode: `--sample-rate`, an `any-llm` backend, response caching, and `context_files`.

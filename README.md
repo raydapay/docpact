@@ -352,6 +352,9 @@ docpact check src/ --add-suppression --suppression-reason "pre-docpact backlog, 
 [tool.docpact]
 schema = "1"
 format = "google"                # or "numpy"
+# The built-in default is conservative: ("DOC", "MCP", "PARSE"). The line below
+# adds FIX (suppression hygiene) and TY (type/docstring coherence) for stricter
+# CI — recommended, and what the opening TY001 example assumes.
 select = ["DOC", "MCP", "FIX", "TY"]
 suppress_comment = ["nodo"]      # inline suppression marker
 jobs = 1                         # parallel workers; 1 = serial (default), 0 = all cores
@@ -454,7 +457,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 Self-hosting: `docpact` validates its own source on every commit. 1069 tests, 94% coverage.
 
-Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
+Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, REG010–REG011, SEM001–SEM002. REG is opt-in (`select`); REG011 and REG010's imported-model leg are cross-file (`--crossfile`). SEM001–SEM002 are advisory via `docpact semantic` and never run in `check`.
 
 ## Documentation
 
