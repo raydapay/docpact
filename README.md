@@ -65,11 +65,11 @@ Opt-in, advisory, and separate from `check` (so `check` stays deterministic and
 offline). It uses an LLM to flag what structure can't — cargo-cult docstrings, a
 precondition/constraint implied but not surfaced, an empty Returns. Configure a
 backend under `[tool.docpact.semantic]`; the LLM layer is pluggable
-(OpenAI-compatible ships — GitHub Models, OpenAI, local Ollama/vLLM — and other
-providers are added as adapters). `--dry-run` prints the exact prompts and sends
-nothing. Quality scales with the model — `gpt-4o-mini` (the free GitHub Models
-on-ramp) is the floor and has a higher false-positive rate; a stronger model has
-fewer.
+(OpenAI-compatible ships — GitHub Models, OpenAI, Gemini via its
+OpenAI-compatible endpoint, local Ollama/vLLM — and other providers are added as
+adapters). `--dry-run` prints the exact prompts and sends nothing. Quality
+scales with the model — `gpt-4o-mini` (the free GitHub Models on-ramp) is the
+floor and has a higher false-positive rate; a stronger model has fewer.
 
 `--changed-only <ref>` scopes the scan to files a PR touched (the cheapest cost
 control); `finding_threshold` under `[tool.docpact.semantic]` tunes noise —
@@ -350,13 +350,18 @@ tool_definition_class = ["ToolDefinition"]   # record class name(s); flat dict l
 
 # Opt-in: advisory LLM semantic check (`docpact semantic`). Pluggable backend.
 [tool.docpact.semantic]
-backend = "openai-compat"                    # OpenAI-compatible: GitHub Models, OpenAI, Ollama, vLLM…
+backend = "openai-compat"                    # OpenAI-compatible: GitHub Models, OpenAI, Gemini, Ollama, vLLM…
 model = "openai/gpt-4o-mini"
 api_base = "https://models.github.ai/inference"   # e.g. GitHub Models (free to try)
 api_key_env = "GITHUB_TOKEN"                 # name of the env var holding the key — never the key
+# Gemini works via its OpenAI-compatible endpoint — no extra adapter:
+#   api_base = "https://generativelanguage.googleapis.com/v1beta/openai"
+#   model = "gemini-2.5-pro"                 # gpt-4o-class; flash-tier is cheaper but weaker for SEM002
+#   api_key_env = "GEMINI_API_KEY"
 # min_tier = 3                               # scope to agent-facing tools (default 3)
 # finding_threshold = "weak"                 # "weak" surfaces weak+empty; "empty" only the vacuous
 # scan_modes = ["function"]                  # add "module" for SEM002 — gpt-4o-class model ONLY (see ⚠️ above)
+# max_retries = 2                            # retries on transient 429/5xx with backoff (0 disables)
 
 # Opt-in: cross-file analysis (imported models/handlers) via an LSP server.
 # Used only by `check --crossfile`; the same-file REG010 leg needs none of this.
@@ -424,7 +429,7 @@ Unix-only — on Windows it reports timings and shows memory as `—`.
 
 ## Status
 
-Self-hosting: `docpact` validates its own source on every commit. 1049 tests, 94% coverage.
+Self-hosting: `docpact` validates its own source on every commit. 1059 tests, 94% coverage.
 
 Active rules: DOC001–DOC003, DOC007, DOC012–DOC014, DOC021–DOC022, DOC050, DOC052, DOC099, MCP001, FIX001–FIX004, TY001–TY002, PARSE001, REG001–REG002, SEM001 (advisory).
 

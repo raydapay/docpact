@@ -71,7 +71,10 @@ class SemanticConfig:
     ones, for teams that opt SEM into a gate and want the lowest-noise signal.
     ``scan_modes`` selects which scans run — ``"function"`` (SEM001, default)
     and/or ``"module"`` (SEM002; ADR-013). Module scan is model-sensitive and off
-    by default; only enable it with a gpt-4o-class model. Off until a
+    by default; only enable it with a gpt-4o-class model. ``max_retries`` bounds
+    the per-request retries on transient backend failures (HTTP 429/5xx and
+    transport errors) with exponential backoff — useful against rate-limited or
+    busy endpoints (e.g. free-tier Gemini/GitHub Models). Off until a
     backend/model is configured and `docpact semantic` is invoked — never touched
     by `check`.
 
@@ -85,6 +88,7 @@ class SemanticConfig:
     min_tier: int = 3
     finding_threshold: str = "weak"
     scan_modes: tuple[str, ...] = ("function",)
+    max_retries: int = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +335,13 @@ def _parse_semantic(raw: object) -> SemanticConfig:
             raise ConfigError('semantic.finding_threshold: must be "weak" or "empty"')
         finding_threshold = v
 
+    max_retries = defaults.max_retries
+    if "max_retries" in data:
+        v = data["max_retries"]
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 10:
+            raise ConfigError("semantic.max_retries: must be an integer 0-10")
+        max_retries = v
+
     scan_modes = defaults.scan_modes
     if "scan_modes" in data:
         modes = _parse_string_list(data["scan_modes"], "semantic.scan_modes")
@@ -351,6 +362,7 @@ def _parse_semantic(raw: object) -> SemanticConfig:
         min_tier=min_tier,
         finding_threshold=finding_threshold,
         scan_modes=scan_modes,
+        max_retries=max_retries,
     )
 
 

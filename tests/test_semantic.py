@@ -111,6 +111,22 @@ def test_semantic_finding_threshold_validated(tmp_path: Path) -> None:
         load_config(tmp_path)
 
 
+def test_semantic_max_retries_defaults(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC"]\n')
+    assert load_config(tmp_path).config.semantic.max_retries == 2
+
+
+def test_semantic_max_retries_parsed(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[tool.docpact.semantic]\nmax_retries = 5\n")
+    assert load_config(tmp_path).config.semantic.max_retries == 5
+
+
+def test_semantic_max_retries_validated(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[tool.docpact.semantic]\nmax_retries = 99\n")
+    with pytest.raises(Exception, match="max_retries"):
+        load_config(tmp_path)
+
+
 def test_semantic_scan_modes_default_function(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text('[tool.docpact]\nselect = ["DOC"]\n')
     assert load_config(tmp_path).config.semantic.scan_modes == ("function",)
@@ -205,9 +221,64 @@ def test_backend_http_errors(monkeypatch: pytest.MonkeyPatch, code: int, match: 
         raise urllib.error.HTTPError("u", code, "err", {}, io.BytesIO(b"detail"))  # type: ignore[arg-type]
 
     monkeypatch.setattr(backend.urllib.request, "urlopen", fake_urlopen)
-    be = backend.OpenAICompatBackend(api_base="https://x/v1", model="m", api_key="k")
+    # max_retries=0: this test pins error *classification*, not retry behaviour.
+    be = backend.OpenAICompatBackend(api_base="https://x/v1", model="m", api_key="k", max_retries=0)
     with pytest.raises(backend.SemanticError, match=match):
         be.complete("s", "u")
+
+
+def test_backend_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transient 503 then 200 succeeds within max_retries; backoff sleeps recorded."""
+    calls = {"n": 0}
+
+    def fake_urlopen(req: object, timeout: float) -> _Resp:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.HTTPError("u", 503, "busy", {}, io.BytesIO(b"high demand"))  # type: ignore[arg-type]
+        return _Resp(json.dumps({"choices": [{"message": {"content": "{}"}}]}).encode())
+
+    monkeypatch.setattr(backend.urllib.request, "urlopen", fake_urlopen)
+    slept: list[float] = []
+    be = backend.OpenAICompatBackend(
+        api_base="https://x/v1", model="m", api_key="k", max_retries=2, sleep=slept.append
+    )
+    assert be.complete("s", "u") == "{}"
+    assert calls["n"] == 2
+    assert slept == [1.0]  # one backoff before the successful retry
+
+
+def test_backend_retries_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Persistent 429 exhausts max_retries and raises, reporting the attempt count."""
+    calls = {"n": 0}
+
+    def fake_urlopen(req: object, timeout: float) -> _Resp:
+        calls["n"] += 1
+        raise urllib.error.HTTPError("u", 429, "rl", {}, io.BytesIO(b"quota"))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(backend.urllib.request, "urlopen", fake_urlopen)
+    slept: list[float] = []
+    be = backend.OpenAICompatBackend(
+        api_base="https://x/v1", model="m", api_key="k", max_retries=2, sleep=slept.append
+    )
+    with pytest.raises(backend.SemanticError, match=r"rate-limited.*after 3 attempt"):
+        be.complete("s", "u")
+    assert calls["n"] == 3  # initial + 2 retries
+    assert slept == [1.0, 2.0]  # capped exponential backoff
+
+
+def test_backend_auth_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """401 is a permanent auth failure — never retried even with retries enabled."""
+    calls = {"n": 0}
+
+    def fake_urlopen(req: object, timeout: float) -> _Resp:
+        calls["n"] += 1
+        raise urllib.error.HTTPError("u", 401, "no", {}, io.BytesIO(b"bad key"))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(backend.urllib.request, "urlopen", fake_urlopen)
+    be = backend.OpenAICompatBackend(api_base="https://x/v1", model="m", api_key="k", max_retries=3)
+    with pytest.raises(backend.SemanticError, match="auth failed"):
+        be.complete("s", "u")
+    assert calls["n"] == 1  # no retry
 
 
 def test_backend_bad_shape(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -355,6 +426,41 @@ def test_analyze_unparseable_reply_skipped() -> None:
 
 def test_analyze_tolerates_fenced_json() -> None:
     reply = '```json\n{"findings":[{"name":"f","verdict":"empty","issues":["x"]}]}\n```'
+    report = analyzer.analyze([_fn("f")], _FakeBackend(reply))
+    assert len(report.results) == 1
+
+
+def test_analyze_tolerates_bare_list_reply() -> None:
+    """A top-level JSON array (no `findings` wrapper) is normalized, not crashed on.
+
+    Gemini emits the findings list as a bare top-level array even in JSON mode,
+    where OpenAI-family models wrap it in an object. Regression for the
+    AttributeError that aborted the whole run.
+    """
+    reply = json.dumps([{"name": "f", "verdict": "weak", "issues": ["x"]}])
+    report = analyzer.analyze([_fn("f")], _FakeBackend(reply))
+    assert len(report.results) == 1
+    assert report.results[0].message.startswith("weak:")
+
+
+def test_analyze_modules_tolerates_bare_list_reply() -> None:
+    """SEM002 path also normalizes a bare top-level array reply (Gemini shape)."""
+    reply = json.dumps([{"name": "m.py", "scope": "weak", "scope_evidence": "wrong domain"}])
+    report = analyzer.analyze_modules([_mod("m.py")], _FakeBackend(reply))
+    assert len(report.results) == 1
+    assert "scope: wrong domain" in report.results[0].message
+
+
+def test_analyze_non_dict_json_skipped() -> None:
+    """Valid JSON that is neither object nor list yields no findings, no crash."""
+    report = analyzer.analyze([_fn("f")], _FakeBackend("42"))
+    assert report.results == []
+    assert report.requests == 1
+
+
+def test_analyze_skips_non_dict_findings_items() -> None:
+    """A findings array containing non-object items skips them instead of crashing."""
+    reply = json.dumps({"findings": ["garbage", {"name": "f", "verdict": "weak", "issues": ["x"]}]})
     report = analyzer.analyze([_fn("f")], _FakeBackend(reply))
     assert len(report.results) == 1
 

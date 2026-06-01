@@ -178,17 +178,39 @@ def user_prompt(batch: list[FunctionInfo], context: CrossfileContext | None = No
 
 
 def _extract_json(content: str) -> dict:
-    """Parse a model reply as JSON, tolerating markdown fences or surrounding prose."""
+    """Parse a model reply into the canonical ``{"findings": [...]}`` shape.
+
+    Tolerates markdown fences, surrounding prose, and — critically — a bare
+    top-level findings array. Some providers emit the findings list directly as
+    a top-level JSON array rather than wrapping it in an object, even in JSON
+    mode (Gemini does this where OpenAI-family models wrap it); such a list is
+    normalized into the ``findings`` key. A valid-JSON reply that is neither an
+    object nor a list, or whose ``findings`` is not a list, yields an empty
+    ``findings`` so a wrong-shaped reply is skipped rather than crashed on —
+    consistent with the unparseable-reply contract the analyzers document.
+    """
     content = content.strip()
     if content.startswith("```"):
         content = content.strip("`").lstrip("json").strip()
     try:
-        return json.loads(content)
+        parsed = json.loads(content)
     except json.JSONDecodeError:
         start, end = content.find("{"), content.rfind("}")
         if start != -1 and end > start:
-            return json.loads(content[start : end + 1])
-        raise
+            parsed = json.loads(content[start : end + 1])
+        else:
+            start, end = content.find("["), content.rfind("]")
+            if start != -1 and end > start:
+                parsed = json.loads(content[start : end + 1])
+            else:
+                raise
+    if isinstance(parsed, list):
+        return {"findings": parsed}
+    if not isinstance(parsed, dict):
+        return {"findings": []}
+    if not isinstance(parsed.get("findings"), list):
+        return {**parsed, "findings": []}
+    return parsed
 
 
 # --- module-level scan (SEM002; ADR-013) --------------------------------------
@@ -315,6 +337,8 @@ def analyze_modules(
         except json.JSONDecodeError:
             continue  # advisory: skip an unparseable batch rather than fail
         for finding in parsed.get("findings", []):
+            if not isinstance(finding, dict):
+                continue
             module = by_label.get(finding.get("name", ""))
             if module is None:
                 continue
@@ -394,6 +418,8 @@ def analyze(
         except json.JSONDecodeError:
             continue  # advisory: skip an unparseable batch rather than fail
         for finding in parsed.get("findings", []):
+            if not isinstance(finding, dict):
+                continue
             verdict = finding.get("verdict")
             if verdict not in _VERDICT_RANK or _VERDICT_RANK[verdict] < min_rank:
                 continue
