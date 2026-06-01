@@ -14,6 +14,7 @@ the type (empty-returns).
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -65,6 +66,26 @@ class SemanticReport:
     results: list[RuleResult]
     units_reviewed: int  # functions (SEM001) or modules (SEM002), per the scan mode
     requests: int
+
+
+def prompt_fingerprint(prompt: str) -> str:
+    """Short stable hash identifying the system prompt a SEM run used.
+
+    The SEM codes guarantee stable *intent*, not stable *behavior* (ADR-015):
+    behavior tracks the (model, prompt) pair, neither of which is pinned by the
+    code alone. This is the prompt half of that pair — it changes whenever the
+    rubric text changes, so a finding stays traceable to exactly what produced
+    it. `docpact semantic` surfaces it next to the model id.
+
+    Args:
+        prompt: The system prompt string to fingerprint.
+
+    Returns:
+        The first 12 hex characters of the SHA-256 of the prompt. Deterministic
+        — a plain content hash, no salt, no time or randomness — so the same
+        prompt always yields the same fingerprint across runs and machines.
+    """
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
 
 
 def _signature(func: FunctionInfo) -> str:
@@ -191,7 +212,12 @@ def _extract_json(content: str) -> dict:
     """
     content = content.strip()
     if content.startswith("```"):
-        content = content.strip("`").lstrip("json").strip()
+        # Strip the markdown fence, then the literal ``json`` language tag if
+        # present. ``removeprefix`` matches the exact token — ``lstrip("json")``
+        # would strip the character *set* {j,o,s,n}, eating a leading 'j' from a
+        # tagless payload. Harmless today (JSON starts with '{'/'[', and the
+        # brace-finding fallback below rescues it), but wrong as written.
+        content = content.strip("`").strip().removeprefix("json").strip()
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:

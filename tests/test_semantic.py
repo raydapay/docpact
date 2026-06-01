@@ -418,6 +418,15 @@ def test_analyze_modules_unparseable_skipped() -> None:
     assert report.requests == 1
 
 
+def test_prompt_fingerprint_stable_short_and_distinct() -> None:
+    fp = analyzer.prompt_fingerprint
+    assert fp("abc") == fp("abc")  # deterministic
+    assert len(fp("abc")) == 12 and all(c in "0123456789abcdef" for c in fp("abc"))
+    assert fp("abc") != fp("abd")  # tracks content
+    # The two shipped prompts are distinct, so their fingerprints must differ.
+    assert fp(analyzer.SYSTEM) != fp(analyzer.MODULE_SYSTEM)
+
+
 def test_analyze_unparseable_reply_skipped() -> None:
     report = analyzer.analyze([_fn("f")], _FakeBackend("not json at all"))
     assert report.results == []
@@ -428,6 +437,25 @@ def test_analyze_tolerates_fenced_json() -> None:
     reply = '```json\n{"findings":[{"name":"f","verdict":"empty","issues":["x"]}]}\n```'
     report = analyzer.analyze([_fn("f")], _FakeBackend(reply))
     assert len(report.results) == 1
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        '```json\n{"findings":[]}\n```',  # language-tagged fence
+        '```\n{"findings":[]}\n```',  # tagless fence
+        '```json{"findings":[]}```',  # tag with no newline
+        '{"findings":[]}',  # no fence at all
+    ],
+)
+def test_extract_json_fence_variants(reply: str) -> None:
+    """The fence/tag strip yields the object, never eats into the JSON body.
+
+    Guards the ``removeprefix("json")`` fix: ``lstrip("json")`` stripped the
+    character set, which a tagless ``{...}`` happens to survive but a payload
+    leading with j/o/s/n would not. Locks the contract directly on _extract_json.
+    """
+    assert analyzer._extract_json(reply) == {"findings": []}
 
 
 def test_analyze_tolerates_bare_list_reply() -> None:
@@ -633,6 +661,40 @@ def test_semantic_exit_zero(monkeypatch: pytest.MonkeyPatch) -> None:
         result = runner.invoke(main, ["semantic", "m.py", "--min-tier", "2", "--exit-zero"])
     assert result.exit_code == 0
     assert "SEM001" in result.output
+
+
+_PYPROJECT_MODEL = '[tool.docpact.semantic]\nmodel = "gpt-4o-test"\n'
+
+
+def test_semantic_provenance_in_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Text output records the (model, prompt-fingerprint) pair a run used (ADR-015)."""
+    reply = json.dumps({"findings": [{"name": "do_thing", "verdict": "weak", "issues": ["x"]}]})
+    monkeypatch.setattr("docpact.cli.make_backend", lambda cfg: _FakeBackend(reply))
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        Path(td, "pyproject.toml").write_text(_PYPROJECT_MODEL)
+        Path(td, "m.py").write_text(_SRC)
+        result = runner.invoke(main, ["semantic", "m.py", "--min-tier", "2", "--exit-zero"])
+    assert "provenance: model=gpt-4o-test;" in result.output
+    expected_fp = analyzer.prompt_fingerprint(analyzer.SYSTEM)
+    assert f"SEM001=builtin:{expected_fp}" in result.output
+
+
+def test_semantic_provenance_in_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """JSON output carries provenance under the additive `meta.semantic` key."""
+    reply = json.dumps({"findings": [{"name": "do_thing", "verdict": "weak", "issues": ["x"]}]})
+    monkeypatch.setattr("docpact.cli.make_backend", lambda cfg: _FakeBackend(reply))
+    runner = CliRunner()
+    with runner.isolated_filesystem() as td:
+        Path(td, "pyproject.toml").write_text(_PYPROJECT_MODEL)
+        Path(td, "m.py").write_text(_SRC)
+        result = runner.invoke(
+            main, ["semantic", "m.py", "--min-tier", "2", "--exit-zero", "--format", "json"]
+        )
+    doc = json.loads(result.output)
+    assert doc["meta"]["semantic"]["model"] == "gpt-4o-test"
+    expected_fp = analyzer.prompt_fingerprint(analyzer.SYSTEM)
+    assert doc["meta"]["semantic"]["prompts"]["SEM001"] == f"builtin:{expected_fp}"
 
 
 def test_semantic_backend_error_is_usage_error(monkeypatch: pytest.MonkeyPatch) -> None:

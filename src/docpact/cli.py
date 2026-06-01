@@ -80,6 +80,7 @@ from docpact.semantic.analyzer import analyze_modules as _sem_analyze_modules
 from docpact.semantic.analyzer import build_batches as _sem_build_batches
 from docpact.semantic.analyzer import build_module_batches as _sem_build_module_batches
 from docpact.semantic.analyzer import module_user_prompt as _sem_module_user_prompt
+from docpact.semantic.analyzer import prompt_fingerprint as _sem_prompt_fingerprint
 from docpact.semantic.analyzer import user_prompt as _sem_user_prompt
 from docpact.semantic.backend import SemanticError, make_backend
 from docpact.suppress import apply_suppressions, parse_suppressions
@@ -1592,8 +1593,18 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
         raise click.UsageError(str(exc)) from exc
     results.sort(key=lambda r: (str(r.location.file_path), r.location.line, r.location.column))
 
+    # Run provenance (ADR-015): SEM behavior tracks the (model, prompt) pair, so
+    # surface both. Fingerprint only the prompts actually exercised this run; the
+    # `builtin:` source tag leaves room for `custom:` once rubric override ships.
+    prompts: dict[str, str] = {}
+    if functions:
+        prompts["SEM001"] = f"builtin:{_sem_prompt_fingerprint(_SEM_SYSTEM)}"
+    if modules:
+        prompts["SEM002"] = f"builtin:{_sem_prompt_fingerprint(_SEM_MODULE_SYSTEM)}"
+    provenance = {"model": config.semantic.model or "<unset>", "prompts": prompts}
+
     if output_format == "json":
-        click.echo(format_json(results, Path.cwd()))
+        click.echo(format_json(results, Path.cwd(), meta={"semantic": provenance}))
     else:
         if results:
             click.echo(format_text(results, Path.cwd()))
@@ -1606,6 +1617,8 @@ def semantic(  # nodo: DOC012 -- click params; Args section would duplicate --he
             f"Reviewed {' and '.join(reviewed)} in {requests} request(s); "
             f"{len(results)} finding(s). [advisory — non-deterministic]"
         )
+        prompt_str = ", ".join(f"{code}={fp}" for code, fp in prompts.items())
+        click.echo(f"provenance: model={provenance['model']}; prompt {prompt_str}")
 
     if results and not exit_zero:
         sys.exit(1)

@@ -134,7 +134,9 @@ def _format_text_color(results: list[RuleResult], cwd: Path | None) -> str:
     return output.rstrip("\n")
 
 
-def format_json(results: list[RuleResult], cwd: Path | None = None) -> str:
+def format_json(
+    results: list[RuleResult], cwd: Path | None = None, meta: dict | None = None
+) -> str:
     """Format diagnostics as a versioned JSON document.
 
     Schema version "1". Top-level keys: version, diagnostics, summary.
@@ -145,6 +147,12 @@ def format_json(results: list[RuleResult], cwd: Path | None = None) -> str:
         results: Diagnostics to format, in any order.
         cwd: Working directory used to make file paths relative.
             When None the paths are left as-is.
+        meta: Optional producer metadata added under a top-level ``meta`` key.
+            Additive and backward compatible: when None (the default, used by
+            ``check``) the key is omitted and the document is byte-identical to
+            the schema-1 output. ``semantic`` passes its run provenance (model
+            id + prompt fingerprints) here, since its output is non-deterministic
+            and a finding must stay traceable to what produced it.
 
     Returns:
         JSON string. Always valid JSON, even when results is empty.
@@ -179,6 +187,8 @@ def format_json(results: list[RuleResult], cwd: Path | None = None) -> str:
         "diagnostics": diagnostics,
         "summary": {"total": n, "fixable": fixable, "unsafe_fixable": unsafe},
     }
+    if meta is not None:
+        doc["meta"] = meta
     return json.dumps(doc, indent=2)
 
 

@@ -126,6 +126,19 @@ def test_format_json_version_field(tmp_path: Path) -> None:
     assert doc["version"] == "1"
 
 
+def test_format_json_omits_meta_when_absent(tmp_path: Path) -> None:
+    """No meta arg → no `meta` key; output stays byte-identical for `check`."""
+    doc = json.loads(format_json([_result(tmp_path / "f.py")]))
+    assert "meta" not in doc
+
+
+def test_format_json_includes_meta_when_given(tmp_path: Path) -> None:
+    """An additive top-level `meta` key carries producer metadata (e.g. semantic provenance)."""
+    doc = json.loads(format_json([_result(tmp_path / "f.py")], meta={"semantic": {"model": "x"}}))
+    assert doc["meta"] == {"semantic": {"model": "x"}}
+    assert doc["version"] == "1"  # schema unchanged for existing keys
+
+
 def test_format_json_diagnostic_fields(tmp_path: Path) -> None:
     f = tmp_path / "foo.py"
     r = _result(f, "DOC007", line=3)
