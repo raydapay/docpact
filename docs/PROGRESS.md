@@ -28,6 +28,45 @@ No active milestone.
 
 ---
 
+## Someday — designed, not built (unscheduled)
+
+Designs that are **accepted as designs** but deliberately **not** tied to any spec cycle
+(0.1–0.3) or to the alpha release line (`0.1.0aN`). They have ADRs so a future session
+inherits the analysis instead of re-deriving it; none is on a roadmap, and nothing here
+ships until it earns a real phase below. Detached on purpose — do not read these as
+pending release work.
+
+### Sphinx/reST format + docpact-owned custom sections (ADR-016)
+
+A `format = "sphinx"` (alias `"rest"`) parser. The `:param`/`:type`/`:return`/`:rtype`/
+`:raises` core is a thin `griffe.parse_sphinx` wrapper over the existing shared converter
+(as cheap as NumPy was). The non-obvious cost — and the reason this is a real feature, not
+a 30-line add — is that **griffe's Sphinx parser drops docpact's custom sections**
+(Constraints/MCP/Mutates) and does not parse `.. note::` admonitions, so a Tier-3 reST
+docstring is *unsatisfiable* without a docpact-owned section-recovery pass. Empirically
+verified against griffe 1.15.0. Coupled to ADR-017 (a reflective tool floored to Tier 3
+needs these sections to exist).
+
+### Reflective class-based agent-tool detection (ADR-017)
+
+A config-driven tier-assignment hook — `[[tool.docpact.agent_tool_patterns]]` matching
+`(path glob, class base-token/suffix, method)` → tier — that floors methods like
+`class XTool(Tool): def apply(...)` to an agent-facing tier. The key correction recorded
+in the ADR: this is a **tier-assignment** problem, not a registry-extraction one (there is
+no literal registry artifact to correlate against — the signature *is* the param source).
+Once the tier is assigned, the existing function-level rules (DOC007/DOC012/…) do all the
+enforcement — near-zero new rule code. Syntactic/offline/deterministic by design; no
+inheritance resolution, no class-docstring rule, no `name_from`/`description_from`.
+
+**Why neither targets Serena (the request's original motivation).** Serena's `apply`
+docstrings carry no Constraints/MCP sections, so detecting its tools and flooring them to
+Tier 3 would make every one fail DOC012 — noise, not signal. So Serena is **not** a
+docpact target. The irony, recorded in both ADRs: the gap that makes Serena uncheckable
+today is exactly what ADR-016 closes — if both shipped, Serena would become checkable.
+The justification for keeping these designs is architectural completeness, not Serena.
+
+---
+
 ## Post-v0.3 — call-based registration + offline REG010 + LSP log (ADR-011, ADR-012) — SHIPPED
 
 Adopter feedback: a hand-rolled MCP surface registering tools via

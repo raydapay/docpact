@@ -1,8 +1,8 @@
 # docpact — Specification
 
-**Version:** 0.4.5  
-**Status:** Active — spec cycles 0.1–0.3 complete (development milestones, independent of release version — see README "Status & versioning"); post-cycle-0.3: SEM (ADR-008) SEM001 + SEM002 module scan (ADR-013) + `finding_threshold`/`--changed-only`/`scan_modes`, REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped  
-**Last revised:** 2026-06-01
+**Version:** 0.4.6  
+**Status:** Active — spec cycles 0.1–0.3 complete (development milestones, independent of release version — see README "Status & versioning"); post-cycle-0.3: SEM (ADR-008) SEM001 + SEM002 module scan (ADR-013) + `finding_threshold`/`--changed-only`/`scan_modes`, REG same-file (ADR-005) + call-based (ADR-011) + cross-file (ADR-009/010/012) shipped. Sphinx format + custom sections (ADR-016) and reflective class-based tool detection (ADR-017) are **designed but unscheduled** — see §5.5  
+**Last revised:** 2026-06-03
 
 ---
 
@@ -192,14 +192,30 @@ Deferred from v0.2: docpact is primarily a CI tool. In a CI-primary workflow, `d
 
 When semantic mode does ship, it ships as opt-in, off by default, and scoped to scheduled CI runs or pre-merge gates on MCP-exposed functions — not pre-commit, not blocking gate by default. Section 12.2 describes the intended design.
 
-### 5.5 Out of scope
+### 5.5 Designed but unscheduled
 
-- Sphinx-format parsing (deferred indefinitely; can be added if there is demand)
+These are accepted *designs* (each has an ADR) that are deliberately **not** tied to any
+spec cycle or release. They ship only if a concrete adopter need schedules them; until
+then they exist so the design is not re-derived. See PROGRESS.md "Someday — designed, not
+built."
+
+- **Sphinx/reST format with docpact-owned custom sections (ADR-016).** `format = "sphinx"`
+  (alias `"rest"`): griffe handles the `:param`/`:return`/`:raises` core, but griffe's
+  Sphinx parser drops docpact's Constraints/MCP/Mutates sections, so a docpact-owned
+  recovery pass is required for Tier 2/3 to be satisfiable. Designed, not built.
+- **Reflective class-based agent-tool detection (ADR-017).** A tier-assignment hook
+  (`[[tool.docpact.agent_tool_patterns]]`) that floors methods like
+  `class XTool(Tool): def apply(...)` to an agent-facing tier; existing function-level
+  rules then enforce the contract. Framed as tier assignment, not registry extraction.
+  Designed, not built; coupled to ADR-016.
+
+### 5.6 Out of scope
+
 - A standalone `format` command separate from `check --fix` (folded into `check`)
 - Third-party rule plugin API (the rule engine architecture permits it, but the API is not stabilized in v0.1; see section 7.5)
 - Cross-language docstring support
 
-### 5.6 Compatibility commitment
+### 5.7 Compatibility commitment
 
 Every feature shipped in any version is governed by the stability commitments in section 18. Anything in v0.1 — rule codes, configuration keys, output formats — is a stable surface from v0.1 forward.
 
@@ -266,7 +282,7 @@ The human developer is a consumer, not the primary target. In a workflow where c
 │         (abstract interface, format-specific impls)     │
 │                                                         │
 │   GoogleParser    NumPyParser    SphinxParser*            │
-│   (v0.1)          (v0.1)        (* deferred)             │
+│   (v0.1)          (v0.1)     (* designed, ADR-016)      │
 ├─────────────────────────────────────────────────────────┤
 │              Python AST + griffe                        │
 │      Source parsing, signature extraction,              │
@@ -297,7 +313,7 @@ class DocstringParser(Protocol):
     def format_name(self) -> str: ...  # "google" | "numpy" | "sphinx"
 ```
 
-This abstraction means additional parser implementations can be added without modifying any rule. v0.1 ships Google and NumPy parsers. The config key `format = "google"` or `"numpy"` selects the parser; `"sphinx"` is deferred indefinitely.
+This abstraction means additional parser implementations can be added without modifying any rule. v0.1 ships Google and NumPy parsers. The config key `format = "google"` or `"numpy"` selects the parser; `"sphinx"` is designed but unscheduled (ADR-016 — note it requires a docpact-owned custom-section pass, not just `griffe.parse_sphinx`; see §5.5).
 
 ### 7.3 Rule engine
 
@@ -363,7 +379,7 @@ Configuration-heavy tools shift decision-making to the user. When every rule is 
 
 `docpact` is opinionated:
 
-**One baseline format.** Google-style docstrings are the default. NumPy is also supported via `format = "numpy"`. Sphinx is not on the roadmap.
+**One baseline format.** Google-style docstrings are the default. NumPy is also supported via `format = "numpy"`. Sphinx is designed but unscheduled (ADR-016, §5.5), not built.
 
 **Decorator and docstring are mutually exclusive for MCP metadata.** A function may declare its MCP description via `@mcp.tool(description="...")` or via a docstring `MCP:` section, not both. If both are present, `docpact` reports `MCP001`. The resolution (decorator wins) is available as an unsafe fix.
 
